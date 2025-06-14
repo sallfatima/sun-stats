@@ -1,0 +1,401 @@
+/* Variables CSS pour TERANGA IA - ANSD */
+:root {
+    --teranga-primary: #162CF8;
+    --teranga-primary-light: #1a2ef5;
+    --teranga-secondary: #F63D15;
+    --teranga-accent: #E2A31B;
+    --teranga-bg-primary: linear-gradient(135deg, #162CF8 0%, #1a2ef5 100%);
+    --teranga-glass: rgba(255, 255, 255, 0.1);
+    --teranga-glass-border: rgba(255, 255, 255, 0.2);
+    --teranga-text-primary: #ffffff;
+    --teranga-text-secondary: rgba(255, 255, 255, 0.8);
+}
+
+/* Reset et body principal */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+    background: var(--teranga-bg-primary) !important;
+    color: var(--teranga-text-primary) !important;
+    overflow: hidden;
+}
+
+/* Container principal */
+#root {
+    background: var(--teranga-bg-primary) !important;
+    height: 100vh !important;
+}
+
+/* Header customization */
+.cl-header {
+    background: var(--teranga-glass) !important;
+    backdrop-filter: blur(10px) !important;
+    border-bottom: 1px solid var(--teranga-glass-border) !important;
+    padding: 20px !important;
+}
+
+/* Logo et branding */
+.cl-header::before {
+    content: '';
+    display: inline-block;
+    width: 50px;
+    height: 50px;
+    background: white;
+    border: 3px solid var(--teranga-primary);
+    border-radius: 50%;
+    margin-right: 15px;
+    position: relative;
+    vertical-align: middle;
+}
+
+.cl-header::after {
+    content: 'TERANGA IA - ANSD';
+    font-size: 24px;
+    font-weight: 500;
+    color: var(--teranga-text-primary);
+    margin-left: 10px;
+    vertical-align: middle;
+}
+
+/* Animation du logo */
+@keyframes rotate {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.cl-header::before {
+    animation: rotate 20s linear infinite;
+}
+
+/* Chat container */
+.cl-chat-container {
+    background: var(--teranga-glass) !important;
+    backdrop-filter: blur(10px) !important;
+    border: 1px solid var(--teranga-glass-border) !important;
+    max-width: 1200px !important;
+    margin: 0 auto !important;
+    height: 100vh !important;
+}
+
+/* Messages */
+.cl-message {
+    background: var(--teranga-glass) !important;
+    border: 1px solid var(--teranga-glass-border) !important;
+    border-radius: 18px !important;
+    backdrop-filter: blur(5px) !important;
+    margin: 15px 0 !important;
+    animation: slideIn 0.3s ease-out !important;
+}
+
+/* Messages utilisateur */
+.cl-message.cl-user-message {
+    background: rgba(226, 163, 27, 0.2) !important;
+    border: 1px solid rgba(226, 163, 27, 0.3) !important;
+    margin-left: auto !important;
+    margin-right: 0 !important;
+    max-width: 80% !important;
+}
+
+/* Messages assistant */
+.cl-message.cl-assistant-message {
+    background: rgba(246, 61, 21, 0.2) !important;
+    border: 1px solid rgba(246, 61, 21, 0.3) !important;
+    margin-right: auto !important;
+    margin-left: 0 !important;
+    max-width: 80% !important;
+}
+
+/* Avatar utilisateur */
+.cl-user-message .cl-avatar {
+    background: var(--teranga-accent) !important;
+    color: white !important;
+    border-radius: 50% !important;
+    width: 40px !important;
+    height: 40px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-weight: bold !important;
+}
+
+/* Avatar assistant */
+.cl-assistant-message .cl-avatar {
+    background: var(--teranga-secondary) !important;
+    color: white !important;
+    border-radius: 50% !important;
+    width: 40px !important;
+    height: 40px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-weight: bold !important;
+}
+
+/* Contenu des messages */
+.cl-message-content {
+    color: var(--teranga-text-primary) !important;
+    line-height: 1.6 !important;
+    padding: 12px 16px !important;
+}
+
+/* Input container */
+.cl-input-container {
+    background: var(--teranga-glass) !important;
+    border-top: 1px solid var(--teranga-glass-border) !important;
+    padding: 20px !important;
+}
+
+/* Input field */
+.cl-input {
+    background: rgba(255, 255, 255, 0.9) !important;
+    border: 2px solid transparent !important;
+    border-radius: 25px !important;
+    padding: 12px 20px !important;
+    font-size: 16px !important;
+    color: #333 !important;
+    transition: all 0.3s ease !important;
+    min-height: 50px !important;
+}
+
+.cl-input:focus {
+    border-color: var(--teranga-primary) !important;
+    box-shadow: 0 0 0 3px rgba(22, 44, 248, 0.1) !important;
+    outline: none !important;
+}
+
+/* Send button */
+.cl-send-button {
+    background: var(--teranga-bg-primary) !important;
+    border: none !important;
+    border-radius: 50% !important;
+    width: 50px !important;
+    height: 50px !important;
+    color: white !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    transition: all 0.3s ease !important;
+    font-size: 20px !important;
+    cursor: pointer !important;
+}
+
+.cl-send-button:hover {
+    transform: scale(1.05) !important;
+    box-shadow: 0 5px 15px rgba(22, 44, 248, 0.3) !important;
+}
+
+/* Actions/Buttons */
+.cl-action {
+    background: var(--teranga-glass) !important;
+    color: var(--teranga-text-primary) !important;
+    border: 1px solid var(--teranga-glass-border) !important;
+    border-radius: 20px !important;
+    padding: 8px 16px !important;
+    margin: 5px !important;
+    transition: all 0.3s ease !important;
+    cursor: pointer !important;
+}
+
+.cl-action:hover {
+    background: rgba(22, 44, 248, 0.3) !important;
+    transform: translateY(-2px) !important;
+}
+
+/* Sources */
+.cl-sources {
+    margin-top: 10px !important;
+    padding: 8px 12px !important;
+    background: rgba(255, 255, 255, 0.05) !important;
+    border-radius: 8px !important;
+    border-left: 3px solid var(--teranga-accent) !important;
+}
+
+.cl-source-tag {
+    display: inline-block !important;
+    background: rgba(226, 163, 27, 0.2) !important;
+    color: var(--teranga-accent) !important;
+    padding: 2px 8px !important;
+    border-radius: 12px !important;
+    font-size: 12px !important;
+    margin: 2px !important;
+}
+
+/* Loading indicator */
+.cl-loading {
+    color: var(--teranga-secondary) !important;
+}
+
+.cl-typing-dots {
+    background: var(--teranga-secondary) !important;
+}
+
+/* Welcome message */
+.cl-welcome {
+    text-align: center !important;
+    color: var(--teranga-text-secondary) !important;
+    margin: 50px 0 !important;
+}
+
+.cl-welcome h2 {
+    font-size: 28px !important;
+    margin-bottom: 10px !important;
+    color: var(--teranga-text-primary) !important;
+}
+
+/* Suggested questions */
+.cl-suggested-questions {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 10px !important;
+    justify-content: center !important;
+    margin-top: 30px !important;
+}
+
+.cl-suggestion-chip {
+    background: var(--teranga-glass) !important;
+    color: var(--teranga-text-primary) !important;
+    padding: 8px 16px !important;
+    border-radius: 20px !important;
+    cursor: pointer !important;
+    border: 1px solid var(--teranga-glass-border) !important;
+    transition: all 0.3s ease !important;
+    font-size: 14px !important;
+}
+
+.cl-suggestion-chip:hover {
+    background: rgba(22, 44, 248, 0.3) !important;
+    transform: translateY(-2px) !important;
+}
+
+/* Animations */
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Scrollbar customization */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--teranga-primary);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--teranga-primary-light);
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+    .cl-chat-container {
+        height: 100vh !important;
+        border-radius: 0 !important;
+    }
+    
+    .cl-message {
+        max-width: 90% !important;
+    }
+    
+    .cl-header {
+        padding: 15px !important;
+    }
+    
+    .cl-messages {
+        padding: 15px !important;
+    }
+}
+
+/* Dark mode overrides */
+.dark {
+    background: var(--teranga-bg-primary) !important;
+    color: var(--teranga-text-primary) !important;
+}
+
+.dark .cl-message {
+    background: var(--teranga-glass) !important;
+    border: 1px solid var(--teranga-glass-border) !important;
+}
+
+/* Custom logo styling */
+.teranga-logo {
+    width: 50px;
+    height: 50px;
+    position: relative;
+    display: inline-block;
+    margin-right: 15px;
+}
+
+.teranga-logo-circle {
+    width: 50px;
+    height: 50px;
+    border: 3px solid var(--teranga-primary);
+    border-radius: 50%;
+    position: relative;
+    background: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.teranga-logo-pattern {
+    position: absolute;
+    top: -10px;
+    left: -10px;
+    width: 70px;
+    height: 70px;
+    border: 2px solid rgba(22, 44, 248, 0.3);
+    border-radius: 50%;
+    animation: rotate 20s linear infinite;
+}
+
+.teranga-logo-pattern::before {
+    content: '';
+    position: absolute;
+    top: -5px;
+    left: -5px;
+    width: 80px;
+    height: 80px;
+    border: 1px solid rgba(22, 44, 248, 0.2);
+    border-radius: 50%;
+}
+
+.teranga-logo-icon {
+    font-size: 20px;
+    color: var(--teranga-secondary);
+    font-weight: bold;
+}
+
+/* Override any existing styles */
+* {
+    color: inherit !important;
+}
+
+.cl-message * {
+    color: var(--teranga-text-primary) !important;
+}
+
+/* Ensure proper text contrast */
+.cl-user-message .cl-message-content {
+    color: var(--teranga-text-primary) !important;
+}
+
+.cl-assistant-message .cl-message-content {
+    color: var(--teranga-text-primary) !important;
+}
