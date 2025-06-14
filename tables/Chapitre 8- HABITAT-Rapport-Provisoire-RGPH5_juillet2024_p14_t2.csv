@@ -1,0 +1,52 @@
+"N° d’ordre","Libellé de la 
+variable","Nom de variable","(a) 
+Cas valides","(b) Cas manquants","(c) Taux de valeurs 
+manquantes (%)"
+"1.","Type de logement","E01","2 045 436","0","0%"
+"2.","Nombre de pièces 
+à usage 
+d’habitation","E02","2 045 436","0","0%"
+"3.","Statut d’occupation","E03A","2 045 436","0","0%"
+"4.","Type de titre de 
+propriété","E03B","1 483 320","0","0%"
+"5.","Mode d’acquisition 
+du logement","E04","1 483 320","0","0%"
+"6.","Nature et 
+revêtement du mur 
+du bâtiment 
+principal","E05","2 045 436","0","0%"
+"7.","Nature et 
+revêtement du toit 
+du bâtiment 
+principal","E06","2 045 436","0","0%"
+"8.","Nature et 
+revêtement du sol 
+du bâtiment 
+principal","E07","2 045 436","0","0%"
+"9.","Principal type 
+d’aisance","E08A","2 045 436","0","0%"
+"10.","Partage de toilette 
+avec d’autres 
+ménages","E08B","1 821 187","0","0%"
+"11.","Principal mode 
+d’approvisionneme
+nt en eau","E09","2 045 436","0","0%"
+"12.","D’où provient 
+principalement 
+l’eau que boivent 
+les membres de 
+votre ménage ?","E10","2 045 436","0","0%"
+"13.","Principal mode 
+d’éclairage","E11","2 045 436","0","0%"
+"14.","Principal 
+combustible pour la 
+cuisson","E12","2 045 436","0","0%"
+"12.","Principal mode 
+d’évacuation des 
+ordures ménagères","E16","2 045 436","0","0%"
+"13.","Principal mode 
+d’évacuation des 
+eaux usées","E17A","2 045 436","0","0%"
+"14.","Principal mode 
+d’évacuation des 
+boues de vidande","E17B","1 406 850","0","0%"

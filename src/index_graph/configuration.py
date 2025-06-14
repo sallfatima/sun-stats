@@ -1,23 +1,46 @@
-"""Define the configurable parameters for the index graph."""
-
+# index_graph/configuration.py
 from __future__ import annotations
-
 from dataclasses import dataclass, field
-
 from shared.configuration import BaseConfiguration
+from dotenv import load_dotenv
+import os
 
-# This file contains sample documents to index, based on the following LangChain and LangGraph documentation pages:
-# - https://python.langchain.com/v0.3/docs/concepts/
-# - https://langchain-ai.github.io/langgraph/concepts/low_level/
+load_dotenv()  # charge .env à la racine du projet
+
 DEFAULT_DOCS_FILE = "src/sample_docs.json"
-
 
 @dataclass(kw_only=True)
 class IndexConfiguration(BaseConfiguration):
-    """Configuration class for indexing and retrieval operations.
+    """Configuration pour l’indexation textuelle et visuelle."""
 
-    This class defines the parameters needed for configuring the indexing and
-    retrieval processes, including embedding model selection, retriever provider choice, and search parameters.
-    """
-    api_key: str = field(default="", metadata={"description": "The API key for indexing documents."})
-    pinecone_index: str = field(default="langchain-doc", metadata={"description": "The Pinecone index to use for indexing documents."})
+    # — Textuel (existant) —
+    api_key: str = field(
+        default_factory=lambda: os.getenv("OPENAI_API_KEY", ""),
+        metadata={"description": "Clé OpenAI pour embeddings textuels."}
+    )
+    pinecone_index: str = field(
+        default="ansd-doc",
+        metadata={"description": "Nom de l’index Pinecone pour le texte."}
+    )
+
+    # — Visuel (nouveau) —
+    chart_index_path: str = field(
+        default_factory=lambda: os.getenv("CHART_INDEX_PATH", "charts_index.csv"),
+        metadata={"description": "Chemin vers le CSV d’index des graphiques."}
+    )
+    images_dir: str = field(
+        default_factory=lambda: os.getenv("IMAGES_DIR", "src/assets/images"),
+        metadata={"description": "Dossier racine des images extraites."}
+    )
+    vision_embedding_model: str = field(
+        default="clip-vision-512",
+        metadata={"description": "Modèle OpenAI pour embeddings vision."}
+    )
+    text_embedding_model: str = field(
+        default="text-embedding-ada-002",
+        metadata={"description": "Modèle OpenAI pour embeddings texte."}
+    )
+    pinecone_image_index: str = field(
+        default="sunu-visual-index",
+        metadata={"description": "Nom de l’index Pinecone pour les images."}
+    )

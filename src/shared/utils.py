@@ -16,6 +16,9 @@ from urllib.parse import urljoin
 import re
 from typing import List, Dict, Any
 from datetime import datetime
+import csv
+from pathlib import Path
+import fitz  # PyMuPDF
 
 
 def _format_doc(doc: Document) -> str:
@@ -430,3 +433,49 @@ def log_ansd_generation(response: str, validation_result: Dict = None):
             print(f"   • {data['value']} ({data['type']})")
     
     print(f"{'='*60}\n")
+
+
+
+# Chemin fixes à la racine du projet
+IMAGES_DIR = Path("./images")
+INDEX_CSV = Path("./charts_index.csv")
+
+
+def generate_charts_index(pdf_root: Path) -> None:
+    """
+    Extrait toutes les images (charts) des PDF sous pdf_root,
+    les sauvegarde dans IMAGES_DIR
+    et reconstruit INDEX_CSV.
+
+    :param pdf_root: Dossier racine contenant les PDF à analyser.
+    """
+    IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+
+    with INDEX_CSV.open("w", newline="", encoding="utf-8") as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(["image_id", "pdf_path", "page", "image_path"])
+
+        for pdf_path in pdf_root.rglob("*.pdf"):
+            doc = fitz.open(str(pdf_path))
+            for page_num in range(len(doc)):
+                page = doc[page_num]
+                for img_index, img in enumerate(page.get_images(full=True), start=1):
+                    xref = img[0]
+                    pix = fitz.Pixmap(doc, xref)
+                    if pix.n > 4:
+                        pix = fitz.Pixmap(fitz.csRGB, pix)
+
+                    image_name = f"{pdf_path.stem}_p{page_num+1}_i{img_index}.png"
+                    image_path = IMAGES_DIR / image_name
+                    pix.save(str(image_path))
+                    pix = None
+
+                    image_id = image_name.replace(".png", "")
+                    writer.writerow([
+                        image_id,
+                        str(pdf_path),
+                        page_num + 1,
+                        str(image_path)
+                    ])
+
+    print(f"[✔] Generated {INDEX_CSV} with images from {pdf_root}")

@@ -1,0 +1,20 @@
+"N° 
+d’ordre","Libellé de la 
+variable","Nom de 
+variable","Cas 
+valides (a)","Cas 
+manquants (b)","Taux de valeurs 
+manquantes (%), 
+(c)"
+"1.","Type de 
+population","POP_TYPE","18 126 390","0","0%"
+"2.","Age","B08","18126390","0","0%"
+"3.","Sexe","B06","18126390","0","0%"
+"4.","Possession 
+d'acte de 
+naissance","B10","17683038","0","0%"
+"5.","Nationalité","B16","18126152","238","0,001%"
+"6.","Première langue 
+parlée","B18","17683038","0","0%"
+"7.","Deuxième langue 
+parlée","B19","17683038","0","0%"

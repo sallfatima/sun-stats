@@ -1,0 +1,22 @@
+"N° 
+d’ordre","Libellé de la 
+variable","Nom de 
+variable","(a) 
+Cas valides","(b) Cas 
+manquants","(c) Taux de valeurs 
+manquantes (%)"
+"1.","Fréquentation 
+scolaire","B29","16432959","0","0"
+"2.","Type 
+d'enseignement","B30","10 055 159","0","0"
+"3.","Type 
+d'établissement","B31","7 861 594","0","0"
+"4.","Niveau 
+d'instruction","B32","7 861 594","0","0"
+"5.","Diplôme obtenu","B33","7 467 371","394 222","5,0"
+"6.","Nombre 
+d'années 
+d'études","B33A","2 193 565","0","0"
+"7.","Alphabétisation","B34","14 969 101","0","0"
+"8.","Formation 
+professionnelle","B35","14 969 101","0","0"
