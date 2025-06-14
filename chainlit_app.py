@@ -282,15 +282,15 @@ async def main(message):
             content=f"**{graph_info['name']}** répond:\n\n{answer}"
         ).send()
         
-        # 9. Envoyer les sources si disponibles
-        if sources and len(sources) > 0:
-            sources_md = "\n".join(
-                f"- `{doc.metadata.get('source_pdf', doc.metadata.get('source', 'inconnu'))}` (chunk `{doc.metadata.get('chunk', '?')}`)"
-                for doc in sources
-            )
-            await cl.Message(
-                content=f"**📚 Sources utilisées :**\n{sources_md}"
-            ).send()
+        # # 9. Envoyer les sources si disponibles
+        # if sources and len(sources) > 0:
+        #     sources_md = "\n".join(
+        #         f"- `{doc.metadata.get('source_pdf', doc.metadata.get('source', 'inconnu'))}` (chunk `{doc.metadata.get('chunk', '?')}`)"
+        #         for doc in sources
+        #     )
+        #     await cl.Message(
+        #         content=f"**📚 Sources utilisées :**\n{sources_md}"
+        #     ).send()
         
     except Exception as e:
         await cl.Message(
