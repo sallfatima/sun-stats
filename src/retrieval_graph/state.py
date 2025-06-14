@@ -59,10 +59,10 @@ class InputState:
 
 
 class Router(TypedDict):
-    """Classify user query."""
+    """Classify user query for ANSD context."""
 
     logic: str
-    type: Literal["more-info", "langchain", "general"]
+    type: Literal["more-info", "ansd", "general"]  # Changé "langchain" vers "ansd"
 
 
 # This is the primary state of your agent, where you can store any information

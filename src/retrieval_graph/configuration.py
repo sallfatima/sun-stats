@@ -13,23 +13,23 @@ from shared.configuration import BaseConfiguration
 class AgentConfiguration(BaseConfiguration):
     """The configuration for the agent."""
 
-    # models
+    # models - Changé pour utiliser OpenAI par défaut
     
     query_model: Annotated[str, {"__template_metadata__": {"kind": "llm"}}] = field(
-        default="anthropic/claude-3-haiku-20240307",
+        default="openai/gpt-4o-mini",  # Changé de anthropic/claude-3-haiku-20240307
         metadata={
             "description": "The language model used for processing and refining queries. Should be in the form: provider/model-name."
         },
     )
 
     response_model: Annotated[str, {"__template_metadata__": {"kind": "llm"}}] = field(
-        default="anthropic/claude-3-5-sonnet-20240620",
+        default="openai/gpt-4o",  # Changé de anthropic/claude-3-5-sonnet-20240620
         metadata={
             "description": "The language model used for generating responses. Should be in the form: provider/model-name."
         },
     )
 
-    # prompts
+    # prompts - Restent inchangés
 
     router_system_prompt: str = field(
         default=prompts.ROUTER_SYSTEM_PROMPT,

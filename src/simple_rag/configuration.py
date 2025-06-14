@@ -1,14 +1,21 @@
-import os
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores import FAISS
+"""Define the configurable parameters for the agent."""
 
-class RAGConfig:
-    def __init__(self):
-        # Charger la clé depuis .env
-        self.openai_api_key = os.getenv("OPENAI_API_KEY")
-        # Choix du modèle d’embeddings
-        self.embedding_model = OpenAIEmbeddings(openai_api_key=self.openai_api_key)
-        # Choix du vectorstore. Ici FAISS local.
-        self.vectorstore = None  # sera instancié plus bas
-        # Répertoire pour stocker l’index FAISS
-        self.faiss_index_path = "faiss_index_rgph"
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Annotated
+
+from shared.configuration import BaseConfiguration
+
+
+@dataclass(kw_only=True)
+class RagConfiguration(BaseConfiguration):
+    """The configuration for the agent."""
+
+    # models
+    model: Annotated[str, {"__template_metadata__": {"kind": "llm"}}] = field(
+        default="openai/gpt-4o",
+        metadata={
+            "description": "The language model used for processing and refining queries. Should be in the form: provider/model-name."
+        },
+    )

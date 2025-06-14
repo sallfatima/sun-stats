@@ -1,149 +1,183 @@
-"""Main entrypoint for the conversational retrieval graph.
+"""Simple RAG amélioré avec de meilleures capacités de récupération et de réponse."""
 
-This module defines the core structure and functionality of the conversational
-retrieval graph. It includes the main graph definition, state management,
-and key functions for processing & routing user queries, generating research plans to answer user questions,
-conducting research, and formulating responses.
-"""
-
-from typing import Any, Literal, TypedDict, cast
-
-from langchain_core.messages import BaseMessage
-from langchain_core.runnables import RunnableConfig
+from langchain_core.messages import HumanMessage
+from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import END, START, StateGraph
 
-from retrieval_graph.configuration import AgentConfiguration
-from retrieval_graph.researcher_graph.graph import graph as researcher_graph
-from retrieval_graph.state import AgentState, InputState
-from shared.utils import format_docs, load_chat_model
+from shared import retrieval
+from shared.utils import load_chat_model, format_docs
+from simple_rag.configuration import RagConfiguration
+from simple_rag.state import GraphState, InputState
 
 
-async def respond_to_general_query(
-    state: AgentState, *, config: RunnableConfig
-) -> dict[str, list[BaseMessage]]:
-    """Generate a response to a general query not related to LangChain.
+# Prompt amélioré
+SIMPLE_RAG_SYSTEM_PROMPT = """Vous êtes un expert assistant spécialisé dans l'analyse de documents statistiques et démographiques, particulièrement ceux de l'ANSD (Agence Nationale de la Statistique et de la Démographie du Sénégal).
 
-    This node is called when the router classifies the query as a general question.
+Votre mission est de répondre précisément aux questions en utilisant UNIQUEMENT les informations contenues dans les documents fournis.
 
-    Args:
-        state (AgentState): The current state of the agent, including conversation history and router logic.
-        config (RunnableConfig): Configuration with the model used to respond.
+INSTRUCTIONS IMPORTANTES :
+1. **Utilisez SEULEMENT les informations des documents fournis** - ne pas inventer ou ajouter d'informations externes
+2. **Citez vos sources** - mentionnez toujours d'où vient l'information (nom du document, année, page si disponible)
+3. **Soyez précis avec les chiffres** - donnez les chiffres exacts trouvés dans les documents
+4. **Mentionnez la date des données** - précisez toujours l'année ou la période de référence
+5. **Structurez votre réponse** - utilisez des listes à puces pour la clarté
+6. **Indiquez les limitations** - si les données sont partielles ou anciennes, mentionnez-le
 
-    Returns:
-        dict[str, list[str]]: A dictionary with a 'messages' key containing the generated response.
-    """
-    configuration = AgentConfiguration.from_runnable_config(config)
-    model = load_chat_model(configuration.query_model)
-    system_prompt = configuration.general_system_prompt.format(
-        logic=state.router["logic"]
-    )
-    messages = [{"role": "system", "content": system_prompt}] + state.messages
-    response = await model.ainvoke(messages)
-    return {"messages": [response]}
+FORMAT DE RÉPONSE :
+- **Réponse directe** à la question
+- **Données chiffrées** avec sources et années
+- **Contexte additionnel** pertinent des documents
+- **Limitations/Notes** si applicable
 
+Si l'information n'est PAS dans les documents fournis, dites clairement :
+"Cette information n'est pas disponible dans les documents fournis. Pour obtenir cette donnée, veuillez consulter directement l'ANSD ou leurs publications les plus récentes."
 
-async def create_research_plan(
-    state: AgentState, *, config: RunnableConfig
-) -> dict[str, list[str] | str]:
-    """Create a step-by-step research plan for answering a LangChain-related query.
+DOCUMENTS DISPONIBLES :
+{context}
 
-    Args:
-        state (AgentState): The current state of the agent, including conversation history.
-        config (RunnableConfig): Configuration with the model used to generate the plan.
-
-    Returns:
-        dict[str, list[str]]: A dictionary with a 'steps' key containing the list of research steps.
-    """
-
-    class Plan(TypedDict):
-        """Generate research plan."""
-
-        steps: list[str]
-
-    configuration = AgentConfiguration.from_runnable_config(config)
-    model = load_chat_model(configuration.query_model).with_structured_output(Plan)
-    messages = [
-        {"role": "system", "content": configuration.research_plan_system_prompt}
-    ] + state.messages
-    response = cast(Plan, await model.ainvoke(messages))
-    return {"steps": response["steps"], "documents": "delete"}
+Répondez maintenant à la question de l'utilisateur en suivant ces instructions."""
 
 
-async def conduct_research(state: AgentState) -> dict[str, Any]:
-    """Execute the first step of the research plan.
-
-    This function takes the first step from the research plan and uses it to conduct research.
-
-    Args:
-        state (AgentState): The current state of the agent, including the research plan steps.
-
-    Returns:
-        dict[str, list[str]]: A dictionary with 'documents' containing the research results and
-                              'steps' containing the remaining research steps.
-
-    Behavior:
-        - Invokes the researcher_graph with the first step of the research plan.
-        - Updates the state with the retrieved documents and removes the completed step.
-    """
-
-    if not state.steps:
-        raise ValueError("❌ 'state.steps' est vide dans 'conduct_research'. Aucune étape à exécuter.")
-    result = await researcher_graph.ainvoke({"question": state.steps[0]})
-    return {"documents": result["documents"], "steps": state.steps[1:]}
-
-def check_finished(state: AgentState) -> Literal["respond", "conduct_research"]:
-    """Determine if the research process is complete or if more research is needed.
-
-    This function checks if there are any remaining steps in the research plan:
-        - If there are, route back to the `conduct_research` node
-        - Otherwise, route to the `respond` node
-
-    Args:
-        state (AgentState): The current state of the agent, including the remaining research steps.
-
-    Returns:
-        Literal["respond", "conduct_research"]: The next step to take based on whether research is complete.
-    """
-    if len(state.steps or []) > 0:
-        return "conduct_research"
-    else:
-        return "respond"
+def preprocess_query(query: str) -> str:
+    """Prétraitement de la requête pour améliorer la recherche."""
+    # Ajouter des termes synonymes pour améliorer la recherche
+    query_lower = query.lower()
+    
+    # Dictionnaire de synonymes/termes connexes
+    synonyms = {
+        "population": ["habitants", "démographie", "recensement", "nombre d'habitants"],
+        "économie": ["PIB", "croissance", "économique", "revenus"],
+        "pauvreté": ["pauvre", "indigence", "vulnérabilité"],
+        "éducation": ["école", "alphabétisation", "scolarisation"],
+        "santé": ["mortalité", "morbidité", "espérance de vie"],
+        "emploi": ["chômage", "travail", "activité économique"],
+    }
+    
+    # Enrichir la requête avec des synonymes pertinents
+    enriched_terms = []
+    for key, values in synonyms.items():
+        if key in query_lower:
+            enriched_terms.extend(values[:2])  # Ajouter 2 synonymes max
+    
+    if enriched_terms:
+        return f"{query} {' '.join(enriched_terms)}"
+    
+    return query
 
 
-async def respond(
-    state: AgentState, *, config: RunnableConfig
-) -> dict[str, list[BaseMessage]]:
-    """Generate a final response to the user's query based on the conducted research.
+async def retrieve(state: GraphState, *, config: RagConfiguration) -> dict[str, list | str]: 
+    """Récupération améliorée de documents."""
+    print("---RETRIEVE AMÉLIORÉ---")
+    
+    # Extraire et prétraiter la question
+    question = " ".join(msg.content for msg in state.messages if isinstance(msg, HumanMessage))
+    processed_question = preprocess_query(question)
+    
+    print(f"Question originale: {question}")
+    print(f"Question enrichie: {processed_question}")
 
-    This function formulates a comprehensive answer using the conversation history and the documents retrieved by the researcher.
+    # Configuration de recherche améliorée
+    enhanced_config = dict(config)
+    if 'configurable' not in enhanced_config:
+        enhanced_config['configurable'] = {}
+    
+    # Paramètres de recherche optimisés
+    enhanced_config['configurable']['search_kwargs'] = {
+        'k': 15,  # Récupérer plus de documents
+        'fetch_k': 50,  # Chercher dans plus de candidats
+    }
 
-    Args:
-        state (AgentState): The current state of the agent, including retrieved documents and conversation history.
-        config (RunnableConfig): Configuration with the model used to respond.
+    # Récupération
+    with retrieval.make_retriever(enhanced_config) as retriever:
+        documents = retriever.invoke(processed_question)
+    
+    print(f"Nombre de documents récupérés: {len(documents)}")
+    
+    # Filtrer et scorer les documents (optionnel)
+    scored_documents = []
+    for doc in documents:
+        content_lower = doc.page_content.lower()
+        score = 0
+        
+        # Simple scoring basé sur les mots-clés de la question
+        question_words = question.lower().split()
+        for word in question_words:
+            if len(word) > 3:  # Ignorer les mots très courts
+                score += content_lower.count(word)
+        
+        scored_documents.append((score, doc))
+    
+    # Trier par score et garder les meilleurs
+    scored_documents.sort(key=lambda x: x[0], reverse=True)
+    best_documents = [doc for score, doc in scored_documents[:10]]  # Top 10
+    
+    print(f"Documents sélectionnés après scoring: {len(best_documents)}")
+    
+    return {"documents": best_documents, "messages": state.messages}
 
-    Returns:
-        dict[str, list[str]]: A dictionary with a 'messages' key containing the generated response.
-    """
-    configuration = AgentConfiguration.from_runnable_config(config)
-    model = load_chat_model(configuration.response_model)
-    context = format_docs(state.documents)
-    prompt = configuration.response_system_prompt.format(context=context)
-    messages = [{"role": "system", "content": prompt}] + state.messages
-    response = await model.ainvoke(messages)
-    return {"messages": [response]}
+
+async def generate(state: GraphState, *, config: RagConfiguration):
+    """Génération améliorée de réponse."""
+    print("---GENERATE AMÉLIORÉ---")
+    
+    messages = state.messages
+    documents = state.documents
+
+    # Création du prompt amélioré
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", SIMPLE_RAG_SYSTEM_PROMPT),
+        ("placeholder", "{messages}")
+    ])
+    
+    configuration = RagConfiguration.from_runnable_config(config)
+    model = load_chat_model(configuration.model)
+
+    # Formatage amélioré des documents avec métadonnées
+    def format_docs_with_metadata(docs):
+        if not docs:
+            return "Aucun document pertinent trouvé."
+        
+        formatted = []
+        for i, doc in enumerate(docs, 1):
+            metadata_info = ""
+            if doc.metadata:
+                source = doc.metadata.get('source', 'Source inconnue')
+                metadata_info = f" (Source: {source})"
+            
+            formatted.append(f"Document {i}{metadata_info}:\n{doc.page_content}\n")
+        
+        return "\n".join(formatted)
+
+    # Chaîne améliorée
+    rag_chain = prompt | model
+    
+    # Génération avec contexte enrichi
+    context = format_docs_with_metadata(documents)
+    
+    print(f"Contexte généré (premiers 300 caractères): {context[:300]}...")
+    
+    response = await rag_chain.ainvoke({
+        "context": context,
+        "messages": messages
+    })
+    
+    print(f"Réponse générée: {response.content[:200]}...")
+    
+    return {"messages": [response], "documents": documents}
 
 
-# Define the graph
-builder = StateGraph(AgentState, input=InputState, config_schema=AgentConfiguration)
-builder.add_node(conduct_research)
-builder.add_node(create_research_plan)
-builder.add_node(respond)
+# Configuration du workflow
+workflow = StateGraph(GraphState, input=InputState, config_schema=RagConfiguration)
 
-builder.add_edge(START, "create_research_plan")
-builder.add_edge("create_research_plan", "conduct_research")
-builder.add_conditional_edges("conduct_research", check_finished)
-builder.add_edge("respond", END)
+# Définir les nœuds
+workflow.add_node("retrieve", retrieve)
+workflow.add_node("generate", generate)
 
-# Compile into a graph object that you can invoke and deploy.
-graph = builder.compile()
-graph.name = "RetrievalGraph"
+# Construire le graphe
+workflow.add_edge(START, "retrieve")
+workflow.add_edge("retrieve", "generate")
+workflow.add_edge("generate", END)
+
+# Compiler
+graph = workflow.compile()
+graph.name = "ImprovedSimpleRag"
