@@ -166,3 +166,7 @@ uv.lock
 .chainlit
 .file
 .langgraph_api
+
+image
+tables
+save_images

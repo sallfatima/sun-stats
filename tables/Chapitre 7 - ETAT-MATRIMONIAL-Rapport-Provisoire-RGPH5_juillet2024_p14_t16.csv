@@ -1,5 +1,0 @@
-"Etape 2 : Calcul du nombre d’années-personnes vécues dans le célibat",""
-"À cette étape, la somme des proportions des célibataires dans les différents groupes d’âge",""
-"est faite jusqu’au groupe d’âge 45 à 49 ans (septième groupe) et le total obtenu est multiplié",""
-"par le chiffre 5, qui est l’amplitude de chaque classe [x,x+4]. Notons R1 cette somme :",""
-"R1=","avec x appartenant à l’ensemble {15, 20, 25, 30, 35, 40, 45}"

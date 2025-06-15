@@ -1,8 +1,0 @@
-"vaut 5. S’il n’y a aucune attraction ou répulsion pour ces âges, il vaut 1. Si la répulsion est"
-"totale, cas où aucun âge ne se termine par 0 et 5, l’indice est nul (Gendreau, 1993)."
-"La règle d’interprétation de l’indice de Whipple est la suivante :"
-"  Si Iw = 0, il y a répulsion totale du 0 et 5"
-"  Si Iw = 5, tous les âges enregistrés se terminent par 0 et 5"
-"  Si Iw <1, il y a répulsion pour le 0 et le 5"
-"  Si Iw = 1, il n’y a aucune préférence"
-"  Si 1< Iw <5, il y a attraction, d’autant plus forte que W est voisin de 5"
