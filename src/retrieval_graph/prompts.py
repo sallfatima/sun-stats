@@ -15,7 +15,7 @@ class RagConfiguration(BaseConfiguration):
 
     # Modèle principal - Changé pour utiliser OpenAI par défaut car plus stable
     model: Annotated[str, {"__template_metadata__": {"kind": "llm"}}] = field(
-        default="openai/gpt-4o",  # Changé de anthropic/claude-3-5-sonnet-20240620
+        default="openai/gpt-4o-mini",  # Changé de anthropic/claude-3-5-sonnet-20240620
         metadata={
             "description": "Le modèle de langage utilisé pour la génération de réponses. Format: provider/model-name."
         },

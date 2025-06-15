@@ -17,7 +17,7 @@ class RagConfiguration(BaseConfiguration):
     # =============================================================================
     
     model: Annotated[str, {"__template_metadata__": {"kind": "llm"}}] = field(
-        default="openai/gpt-4o",
+        default="openai/gpt-4o-mini",
         metadata={
             "description": "Le modèle de langage utilisé pour la génération de réponses. Format: provider/model-name."
         },
@@ -94,10 +94,10 @@ class RagConfiguration(BaseConfiguration):
         default_factory=lambda: {
             # Utilise les paramètres retrieval_k et retrieval_fetch_k définis ci-dessus
             # Ces valeurs seront mises à jour dynamiquement
-            "lambda_mult": 0.7,         # Balance similarité/diversité
+            #"lambda_mult": 0.7,         # Balance similarité/diversité
             "score_threshold": 0.1,     # Seuil minimum (correspond à min_document_score)
-            "search_type": "mmr",       # Maximum Marginal Relevance
-            "include_metadata": True,   # Inclure métadonnées
+           # "search_type": "mmr",       # Maximum Marginal Relevance
+           
             
             # Recherche hybride
             "hybrid_search": True,

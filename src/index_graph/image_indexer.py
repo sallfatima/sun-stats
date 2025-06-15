@@ -79,7 +79,7 @@ class ImageIndexer:
         response = self._index.query(
             vector=vector,
             top_k=top_k,
-            include_metadata=True
+          
         )
         return response.get("matches", [])
 

@@ -23,7 +23,7 @@ class AgentConfiguration(BaseConfiguration):
     )
 
     response_model: Annotated[str, {"__template_metadata__": {"kind": "llm"}}] = field(
-        default="openai/gpt-4o",  # Changé de anthropic/claude-3-5-sonnet-20240620
+        default="openai/gpt-4o-mini",  # Changé de anthropic/claude-3-5-sonnet-20240620
         metadata={
             "description": "The language model used for generating responses. Should be in the form: provider/model-name."
         },

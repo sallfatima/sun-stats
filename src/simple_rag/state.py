@@ -10,9 +10,6 @@ from langchain_core.messages import AnyMessage
 from langgraph.graph import add_messages
 
 
-# Optional, the InputState is a restricted version of the State that is used to
-# define a narrower interface to the outside world vs. what is maintained
-# internally.
 @dataclass(kw_only=True)
 class InputState:
     """Represents the input state for the agent.
@@ -53,13 +50,15 @@ class InputState:
         If a message in `right` has the same ID as a message in `left`, the
         message from `right` will replace the message from `left`."""
 
+
 @dataclass(kw_only=True)
 class GraphState(InputState):
     """Represents the state of our graph.
 
     Attributes:
-        generation: LLM generation
-        documents: list of documents
+        messages: List of messages in the conversation (inherited from InputState)
+        documents: List of retrieved documents
     """
 
+    # CORRECTION: Ajouter une valeur par défaut avec field(default_factory=list)
     documents: List[str] = field(default_factory=list)
