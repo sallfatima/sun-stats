@@ -11,15 +11,14 @@ from langchain.chat_models import init_chat_model
 from langchain_core.documents import Document
 from langchain_core.language_models import BaseChatModel
 from pinecone import Index, Pinecone, ServerlessSpec
-from bs4 import BeautifulSoup
-from urllib.parse import urljoin
+from urllib.parse import urljoin 
 import re
 from typing import List, Dict, Any
 from datetime import datetime
 import csv
 from pathlib import Path
 import fitz  # PyMuPDF
-
+import unicodedata
 
 def _format_doc(doc: Document) -> str:
     """Format a single document as XML.
@@ -479,3 +478,328 @@ def generate_charts_index(pdf_root: Path) -> None:
                     ])
 
     print(f"[✔] Generated {INDEX_CSV} with images from {pdf_root}")
+
+
+
+def sanitize_pinecone_id(text: str) -> str:
+    """
+    Convertit un texte en ID valide pour Pinecone (ASCII uniquement).
+    
+    Résout les erreurs comme:
+    - 'visual_table_Tableau_VII-7_Proportion_de_célibataires_définitif_p5_t7'
+    - 'visual_chart_Graphique_IV-16_Pourcentage_de_la_déclaration_de_p_p38_i2'
+    
+    Args:
+        text: Texte source pouvant contenir des caractères non-ASCII
+        
+    Returns:
+        ID valide pour Pinecone (ASCII uniquement)
+        
+    Examples:
+        >>> sanitize_pinecone_id("visual_table_Tableau_VII-7_Proportion_de_célibataires_définitif_p5_t7")
+        'visual_table_Tableau_VII_7_Proportion_de_celibataires_definitif_p5_t7'
+        
+        >>> sanitize_pinecone_id("visual_chart_Graphique_IV-16_Pourcentage_de_la_déclaration_de_p_p38_i2")
+        'visual_chart_Graphique_IV_16_Pourcentage_de_la_declaration_de_p_p38_i2'
+    """
+    if not text:
+        return f"item_{hash('empty') % 1000000}"
+    
+    # 1. Normalisation Unicode (é → e, à → a, ç → c, etc.)
+    text = unicodedata.normalize('NFD', text)
+    text = ''.join(c for c in text if unicodedata.category(c) != 'Mn')
+    
+    # 2. Remplacer tous les caractères non-ASCII par underscore
+    text = re.sub(r'[^a-zA-Z0-9_-]', '_', text)
+    
+    # 3. Nettoyer les underscores multiples
+    text = re.sub(r'_+', '_', text)
+    
+    # 4. Supprimer les underscores en début/fin
+    text = text.strip('_')
+    
+    # 5. Limiter la longueur (Pinecone max 512, on prend 80 pour sécurité)
+    if len(text) > 80:
+        text = text[:80].rstrip('_')
+    
+    # 6. S'assurer qu'on a quelque chose de valide
+    if not text or not text.replace('_', '').replace('-', ''):
+        text = f"item_{hash(str(text)) % 1000000}"
+    
+    return text
+
+
+
+def test_sanitize_pinecone_id():
+    """Teste la fonction de sanitisation avec des cas réels."""
+    
+    test_cases = [
+        # Cas problématiques réels de votre système
+        "visual_table_Tableau_VII-7_Proportion_de_célibataires_définitif_p5_t7",
+        "visual_chart_Graphique_IV-16_Pourcentage_de_la_déclaration_de_p_p38_i2",
+        "visual_chart_Graphique_I-10_Évolution_du_rapport_de_masculinité_p27_i1",
+        
+        # Autres cas à tester
+        "Chapitre 1- ETAT-STRUCTURE-POPULATION-Rapport-Provisoire-RGPH5_juillet2024_0_p28_i1",
+        "Graphique_I-11_Pyramide_des_âges_de_la_population_p29_i1",
+        "Chapitre 4 - FECONDITE-NATALITE-Rapport-Provisoire-RGPH5_juillet2024_0_p25_i2",
+        
+        # Cas limites
+        "",
+        "___---___",
+        "a" * 200,  # Trop long
+    ]
+    
+    print("🧪 TEST DE SANITISATION PINECONE IDS")
+    print("=" * 80)
+    
+    for i, test_id in enumerate(test_cases, 1):
+        fixed_id = sanitize_pinecone_id(test_id)
+        
+        print(f"\nTest {i}:")
+        print(f"  Avant  : {test_id}")
+        print(f"  Après  : {fixed_id}")
+        print(f"  ASCII  : {fixed_id.isascii()}")
+        print(f"  Longueur: {len(fixed_id)}")
+        print(f"  Valide : {'✅' if fixed_id.isascii() and len(fixed_id) <= 80 and fixed_id else '❌'}")
+
+
+# =============================================================================
+# UTILITAIRES POUR DEBUGGING DE L'INDEXATION
+# =============================================================================
+
+def validate_pinecone_id(text: str) -> Dict[str, Any]:
+    """
+    Valide qu'un ID est compatible avec Pinecone.
+    
+    Args:
+        text: ID à valider
+        
+    Returns:
+        Dictionnaire avec les résultats de validation
+    """
+    validation = {
+        'is_valid': True,
+        'is_ascii': text.isascii(),
+        'length_ok': len(text) <= 512,
+        'not_empty': bool(text.strip()),
+        'errors': [],
+        'warnings': []
+    }
+    
+    if not validation['is_ascii']:
+        validation['is_valid'] = False
+        validation['errors'].append(f"Contient des caractères non-ASCII: {[c for c in text if not c.isascii()]}")
+    
+    if not validation['length_ok']:
+        validation['is_valid'] = False
+        validation['errors'].append(f"Trop long: {len(text)} caractères (max 512)")
+    
+    if not validation['not_empty']:
+        validation['is_valid'] = False
+        validation['errors'].append("ID vide")
+    
+    if len(text) > 80:
+        validation['warnings'].append(f"ID assez long: {len(text)} caractères")
+    
+    return validation
+
+
+def diagnose_indexation_errors(error_message: str) -> Dict[str, Any]:
+    """
+    Diagnostique les erreurs d'indexation courantes.
+    
+    Args:
+        error_message: Message d'erreur reçu
+        
+    Returns:
+        Diagnostic avec solutions suggérées
+    """
+    diagnosis = {
+        'error_type': 'unknown',
+        'cause': 'Non identifiée',
+        'solution': 'Vérifier les logs détaillés',
+        'code_fix': None
+    }
+    
+    error_lower = error_message.lower()
+    
+    # Erreur ASCII Pinecone
+    if "vector id must be ascii" in error_lower:
+        diagnosis.update({
+            'error_type': 'pinecone_ascii',
+            'cause': 'ID contient des caractères non-ASCII (accents, caractères spéciaux)',
+            'solution': 'Utiliser sanitize_pinecone_id() pour nettoyer les IDs',
+            'code_fix': '''
+# Dans src/index_graph/graph.py, remplacer:
+doc_id = f"visual_chart_{row.get('image_id', idx)}"
+
+# Par:
+from shared.utils import sanitize_pinecone_id
+raw_id = f"visual_chart_{row.get('image_id', idx)}"
+doc_id = sanitize_pinecone_id(raw_id)
+'''
+        })
+    
+    # Erreur de limite de taux API
+    elif "rate limit" in error_lower or "429" in error_lower:
+        diagnosis.update({
+            'error_type': 'api_rate_limit',
+            'cause': 'Trop d\'appels API simultanés vers OpenAI',
+            'solution': 'Réduire visual_batch_size et ajouter des délais',
+            'code_fix': '''
+# Dans la configuration, réduire:
+"visual_batch_size": 2  # Au lieu de 5
+
+# Ajouter des délais entre batches:
+await asyncio.sleep(2)  # 2 secondes
+'''
+        })
+    
+    # Erreur Pinecone de dimension
+    elif "dimension" in error_lower:
+        diagnosis.update({
+            'error_type': 'pinecone_dimension',
+            'cause': 'Dimension des vecteurs incorrecte',
+            'solution': 'Vérifier la dimension de l\'embedding model (1536 pour text-embedding-3-small)',
+        })
+    
+    return diagnosis
+
+
+# =============================================================================
+# FONCTIONS DE MONITORING POUR L'INDEXATION
+# =============================================================================
+
+def log_indexation_progress(current: int, total: int, item_type: str = "élément") -> None:
+    """
+    Affiche le progrès de l'indexation de manière formatée.
+    
+    Args:
+        current: Nombre d'éléments traités
+        total: Nombre total d'éléments
+        item_type: Type d'élément (graphique, tableau, etc.)
+    """
+    percentage = (current / total) * 100 if total > 0 else 0
+    bar_length = 30
+    filled_length = int(bar_length * current // total) if total > 0 else 0
+    bar = '█' * filled_length + '░' * (bar_length - filled_length)
+    
+    print(f"\r🔄 Indexation {item_type}: [{bar}] {current}/{total} ({percentage:.1f}%)", end='', flush=True)
+    
+    if current == total:
+        print()  # Nouvelle ligne à la fin
+
+
+def create_indexation_report(stats: Dict[str, Any]) -> str:
+    """
+    Crée un rapport détaillé de l'indexation.
+    
+    Args:
+        stats: Statistiques d'indexation
+        
+    Returns:
+        Rapport formaté
+    """
+    report_lines = [
+        "📊 RAPPORT D'INDEXATION ANSD",
+        "=" * 50,
+        ""
+    ]
+    
+    # Statistiques générales
+    if 'total_text_chunks' in stats:
+        report_lines.append(f"📝 Chunks de texte indexés: {stats['total_text_chunks']:,}")
+    
+    # Statistiques visuelles
+    visual_stats = stats.get('visual_indexing_stats', {})
+    if visual_stats:
+        report_lines.extend([
+            f"📊 Graphiques indexés: {visual_stats.get('charts_indexed', 0):,}",
+            f"📋 Tableaux indexés: {visual_stats.get('tables_indexed', 0):,}",
+            f"❌ Graphiques échoués: {visual_stats.get('charts_failed', 0):,}",
+            f"❌ Tableaux échoués: {visual_stats.get('tables_failed', 0):,}",
+        ])
+    
+    # Total
+    total_visual = visual_stats.get('charts_indexed', 0) + visual_stats.get('tables_indexed', 0)
+    total_content = stats.get('total_text_chunks', 0) + total_visual
+    
+    report_lines.extend([
+        "",
+        f"🎯 TOTAL INDEXÉ: {total_content:,} éléments",
+        f"   ├─ Textuel: {stats.get('total_text_chunks', 0):,}",
+        f"   └─ Visuel: {total_visual:,}",
+        ""
+    ])
+    
+    # Fichiers traités
+    if 'processed_files' in stats:
+        report_lines.append(f"✅ PDFs traités: {len(stats['processed_files'])}")
+    
+    if 'failed_files' in stats and stats['failed_files']:
+        report_lines.append(f"❌ PDFs échoués: {len(stats['failed_files'])}")
+    
+    # Recommandations
+    report_lines.extend([
+        "",
+        "💡 RECOMMANDATIONS:",
+    ])
+    
+    if visual_stats.get('charts_failed', 0) > 0 or visual_stats.get('tables_failed', 0) > 0:
+        report_lines.append("   • Vérifier les erreurs ASCII dans les logs")
+        report_lines.append("   • Considérer réduire visual_batch_size")
+    
+    if total_content > 10000:
+        report_lines.append("   • Excellent volume de données indexées!")
+    elif total_content > 1000:
+        report_lines.append("   • Bon volume de données indexées")
+    else:
+        report_lines.append("   • Vérifier si tous les PDFs ont été traités")
+    
+    return "\n".join(report_lines)
+
+
+# =============================================================================
+# FONCTION DE TEST PRINCIPALE
+# =============================================================================
+
+def run_ascii_fix_tests():
+    """Lance tous les tests de correction ASCII."""
+    
+    print("🛠️ TESTS DE CORRECTION ASCII POUR SUN-STATS")
+    print("=" * 60)
+    
+    # Test de la fonction principale
+    test_sanitize_pinecone_id()
+    
+    # Test de validation
+    print("\n🔍 TESTS DE VALIDATION:")
+    print("-" * 30)
+    
+    test_ids = [
+        "visual_table_Tableau_VII-7_Proportion_de_célibataires_définitif_p5_t7",  # Problématique
+        "visual_chart_valid_ascii_id",  # Valide
+        "a" * 600,  # Trop long
+        ""  # Vide
+    ]
+    
+    for test_id in test_ids:
+        validation = validate_pinecone_id(test_id)
+        status = "✅ VALIDE" if validation['is_valid'] else "❌ INVALIDE"
+        print(f"{status}: {test_id[:50]}{'...' if len(test_id) > 50 else ''}")
+        
+        if validation['errors']:
+            for error in validation['errors']:
+                print(f"    ❌ {error}")
+        
+        if validation['warnings']:
+            for warning in validation['warnings']:
+                print(f"    ⚠️ {warning}")
+    
+    print("\n✅ Tests terminés. Utilisez sanitize_pinecone_id() dans votre code d'indexation.")
+
+
+if __name__ == "__main__":
+    # Pour tester directement ce fichier
+    run_ascii_fix_tests()

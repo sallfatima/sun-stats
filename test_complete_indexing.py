@@ -59,6 +59,9 @@ def check_dependencies():
     print("✅ Toutes les dépendances sont satisfaites")
     return True
 
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+
 
 def check_environment():
     """Vérifie les variables d'environnement."""
@@ -151,7 +154,7 @@ async def test_complete_indexing(pdf_directory: str):
                 "table_index_path": "tables_index.csv",
                 "images_dir": "images",
                 "tables_dir": "tables",
-                "visual_batch_size": 3,  # Petite taille pour les tests
+                "visual_batch_size": 1,  # Petite taille pour les tests
                 "max_vision_retries": 2
             }
         }
@@ -164,7 +167,7 @@ async def test_complete_indexing(pdf_directory: str):
         # Exécuter le graphe complet
         result = await index_graph.ainvoke(initial_state, config=config)
         
-        # Analyser les résultats
+        # CORRECTION: Analyser correctement les résultats
         print("\n📊 RÉSULTATS DE L'INDEXATION:")
         print("="*60)
         
@@ -173,12 +176,19 @@ async def test_complete_indexing(pdf_directory: str):
             print(f"📄 Fichiers traités: {len(result.get('processed_files', []))}")
             print(f"📝 Chunks de texte: {result.get('total_text_chunks', 0)}")
             
+            # CORRECTION: Récupérer les vraies statistiques visuelles
             visual_stats = result.get('visual_indexing_stats', {})
-            print(f"📊 Graphiques indexés: {visual_stats.get('charts_indexed', 0)}")
-            print(f"📋 Tableaux indexés: {visual_stats.get('tables_indexed', 0)}")
+            charts_indexed = visual_stats.get('charts_indexed', 0)
+            tables_indexed = visual_stats.get('tables_indexed', 0)
             
-            total_visual = visual_stats.get('charts_indexed', 0) + visual_stats.get('tables_indexed', 0)
-            total_content = result.get('total_text_chunks', 0) + total_visual
+            print(f"📊 Graphiques indexés: {charts_indexed}")
+            print(f"📋 Tableaux indexés: {tables_indexed}")
+            
+            # CORRECTION: Calculer correctement le total
+            total_text = result.get('total_text_chunks', 0)
+            total_visual = charts_indexed + tables_indexed
+            total_content = total_text + total_visual
+            
             print(f"🎯 Total contenu indexé: {total_content} éléments")
             
             # Échecs
@@ -192,6 +202,26 @@ async def test_complete_indexing(pdf_directory: str):
             tables_failed = visual_stats.get('tables_failed', 0)
             if charts_failed or tables_failed:
                 print(f"⚠️ Échecs visuels: {charts_failed} graphiques, {tables_failed} tableaux")
+            
+            # CORRECTION: Ajouter un debug si les chiffres ne correspondent pas
+            if charts_indexed == 0 and tables_indexed == 0:
+                print("\n🔍 DEBUG - Aucun contenu visuel indexé détecté:")
+                print(f"   visual_indexing_stats clé présente: {'visual_indexing_stats' in result}")
+                print(f"   enable_visual_indexing: {config['configurable'].get('enable_visual_indexing')}")
+                
+                # Vérifier les fichiers créés pour diagnostic
+                charts_index = Path("charts_index.csv")
+                tables_index = Path("tables_index.csv")
+                
+                if charts_index.exists():
+                    import pandas as pd
+                    charts_df = pd.read_csv(charts_index)
+                    print(f"   charts_index.csv existe avec {len(charts_df)} entrées")
+                
+                if tables_index.exists():
+                    import pandas as pd
+                    tables_df = pd.read_csv(tables_index)
+                    print(f"   tables_index.csv existe avec {len(tables_df)} entrées")
         
         # Vérifier les fichiers créés
         print(f"\n📁 FICHIERS CRÉÉS:")

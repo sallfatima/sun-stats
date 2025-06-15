@@ -34,6 +34,9 @@ except ImportError:
     print("⚠️ Pillow non installé. Installez avec: pip install Pillow")
 
 
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+
 class PDFVisualExtractor:
     """
     Extrait les graphiques et tableaux des PDFs et crée les index correspondants.

@@ -1,29 +1,31 @@
-# src/index_graph/graph.py
-"""
-Pipeline d'indexation locale complet : extraction + indexation de texte, images et tableaux.
-"""
+# src/index_graph/graph.py - VERSION COMPLÈTE AVEC IMAGES
+
 import os
+import re
 import logging
 from pathlib import Path
-from typing import Optional, Any, Dict, List
+from typing import Optional, Any, Dict, List, Tuple
 from datetime import datetime
 import asyncio
+import pandas as pd
 
 from dotenv import load_dotenv
 from langchain_core.runnables import RunnableConfig
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain.schema import Document
 
 from index_graph.configuration import IndexConfiguration
 from index_graph.state import IndexState, InputState
 from index_graph.pdf_visual_extractor import PDFVisualExtractor
 from shared import retrieval
+from shared.utils import sanitize_pinecone_id
 from langgraph.graph import StateGraph, START, END
 
-# Charger env
+# Charger les variables d'environnement
 load_dotenv()
 
-# Setup logging
+# Configuration du logging
 LOG_PATH = Path("indexing_errors.log")
 logging.basicConfig(
     filename=LOG_PATH,
@@ -32,109 +34,149 @@ logging.basicConfig(
     level=logging.INFO,
 )
 
+# =============================================================================
+# FONCTIONS UTILITAIRES POUR L'AMÉLIORATION DU TEXTE
+# =============================================================================
 
-def check_index_config(
-    state: IndexState,
-    *,
-    config: Optional[RunnableConfig] = None
-) -> Dict[str, Any]:
-    """
-    Valide config et existence du dossier PDF.
-    """
-    configuration = IndexConfiguration.from_runnable_config(config)
-
-    # if not configuration.api_key:
-    #     raise ValueError("API key is required for document indexing.")
-    # if configuration.api_key != os.getenv("INDEX_API_KEY"):
-    #     raise ValueError("Authentication failed: Invalid API key provided.")
-    if configuration.retriever_provider != "pinecone":
-        raise ValueError(
-            "Only Pinecone is currently supported for document indexing."
-        )
-
-    if not state.pdf_root:
-        raise ValueError("pdf_root must be specified and non-empty")
-    pdf_root = Path(state.pdf_root).expanduser().resolve()
-    if not pdf_root.exists() or not pdf_root.is_dir():
-        raise FileNotFoundError(f"PDF directory not found: {pdf_root}")
-
-    pdf_files = list(pdf_root.glob("**/*.pdf"))
-    return {"total_files_found": len(pdf_files)}
-
-
-async def extract_visual_content(
-    state: IndexState,
-    *,
-    config: Optional[RunnableConfig] = None
-) -> Dict[str, Any]:
-    """
-    Étape 1: Extraire les graphiques et tableaux des PDFs.
-    """
-    print("🔍 ÉTAPE 1: Extraction du contenu visuel des PDFs...")
+def detect_ansd_content_type(text: str, pdf_name: str) -> str:
+    """Détecte le type de contenu ANSD basé sur le texte et le nom du fichier."""
+    text_lower = text.lower()
+    pdf_lower = pdf_name.lower()
     
-    cfg = IndexConfiguration.from_runnable_config(config)
-    pdf_root = Path(state.pdf_root).expanduser().resolve()
+    content_patterns = {
+        "rgph_demographics": ["population", "démographique", "ménage", "habitat", "rgph"],
+        "rgph_economics": ["économie", "activité économique", "emploi", "chômage"],
+        "rgph_education": ["éducation", "alphabétisation", "scolarisation", "instruction"],
+        "rgph_health": ["santé", "handicap", "mortalité", "espérance de vie"],
+        "rgph_marriage": ["matrimonial", "mariage", "union", "célibat"],
+        "rgph_fertility": ["fécondité", "natalité", "naissances"],
+        "rgph_migration": ["migration", "mobilité", "déplacement"],
+        "rgph_methodology": ["méthodologie", "organisation", "enquête"],
+        "statistics_table": ["tableau", "données", "statistiques", "résultats"],
+        "executive_summary": ["synthèse", "résumé", "principales", "conclusions"]
+    }
     
-    # Vérifier si l'extraction visuelle est activée
-    if not cfg.enable_visual_indexing:
-        print("⚠️ Extraction visuelle désactivée dans la configuration")
-        # IMPORTANT: Retourner l'état avec visual_extraction_completed = True
-        # même si désactivé pour permettre l'indexation textuelle
-        return {
-            "visual_extraction_completed": True,
-            "total_images_extracted": 0,
-            "total_tables_extracted": 0,
-            "extraction_errors": ["Extraction visuelle désactivée dans la configuration"]
-        }
+    # Vérifier le nom du fichier d'abord
+    for content_type, keywords in content_patterns.items():
+        if any(keyword in pdf_lower for keyword in keywords):
+            return content_type
     
-    try:
-        # Créer l'extracteur visuel
-        extractor = PDFVisualExtractor(
-            output_dir=cfg.output_dir if hasattr(cfg, 'output_dir') else ".",
-            images_dir=cfg.images_dir,
-            tables_dir=cfg.tables_dir
-        )
-        
-        # Traiter tous les PDFs du dossier
-        print(f"📁 Extraction depuis: {pdf_root}")
-        
-        # Exécuter l'extraction dans un thread séparé pour éviter le blocage
-        extraction_result = await asyncio.to_thread(
-            extractor.process_directory,
-            pdf_root
-        )
-        
-        print(f"✅ Extraction terminée:")
-        print(f"   📊 {extraction_result['total_images']} images extraites")
-        print(f"   📋 {extraction_result['total_tables']} tableaux extraits")
-        print(f"   📄 {extraction_result['processed_pdfs']} PDFs traités")
-        
-        # IMPORTANT: Retourner les mises à jour de l'état au bon format pour LangGraph
-        # Ces clés seront fusionnées avec l'état existant
-        return {
-            "visual_extraction_completed": True,
-            "total_images_extracted": extraction_result["total_images"],
-            "total_tables_extracted": extraction_result["total_tables"],
-            "extraction_errors": extraction_result.get("processing_errors", [])
-        }
-        
-    except Exception as e:
-        error_msg = f"Erreur lors de l'extraction visuelle: {e}"
-        logging.error(error_msg)
-        print(f"❌ {error_msg}")
-        
-        # En cas d'erreur, marquer comme non complété mais permettre le reste
-        return {
-            "visual_extraction_completed": False,
-            "total_images_extracted": 0,
-            "total_tables_extracted": 0,
-            "extraction_errors": [error_msg]
-        }
+    # Vérifier le contenu du texte
+    for content_type, keywords in content_patterns.items():
+        keyword_count = sum(1 for keyword in keywords if keyword in text_lower)
+        if keyword_count >= 2:
+            return content_type
+    
+    return "rgph_general"
+
+
+def extract_numerical_indicators(text: str) -> List[Dict[str, Any]]:
+    """Extrait les indicateurs numériques importants du texte ANSD."""
+    indicators = []
+    
+    demographic_patterns = [
+        (r"population\s*(?:totale|du\s+sénégal)?\s*:\s*([0-9,\s]+(?:millions?|habitants?)?)", "population_totale"),
+        (r"taux\s+de\s+croissance\s*:\s*([0-9,]+\s*%)", "taux_croissance"),
+        (r"densité\s*:\s*([0-9,]+\s*(?:hab/km²|habitants?\s+par\s+km²)?)", "densite"),
+        (r"espérance\s+de\s+vie\s*:\s*([0-9,]+\s*ans?)", "esperance_vie"),
+        (r"taux\s+(?:d')?alphabétisation\s*:\s*([0-9,]+\s*%)", "alphabetisation"),
+        (r"taux\s+de\s+scolarisation\s*:\s*([0-9,]+\s*%)", "scolarisation"),
+        (r"(?:indice\s+synthétique\s+de\s+)?fécondité\s*:\s*([0-9,]+)", "fecondite"),
+        (r"taux\s+de\s+mortalité\s+infantile\s*:\s*([0-9,]+\s*‰?)", "mortalite_infantile")
+    ]
+    
+    for pattern, indicator_type in demographic_patterns:
+        matches = re.finditer(pattern, text, re.IGNORECASE)
+        for match in matches:
+            indicators.append({
+                "type": indicator_type,
+                "value": match.group(1).strip(),
+                "context": text[max(0, match.start()-50):match.end()+50].strip(),
+                "position": match.span()
+            })
+    
+    return indicators
+
+
+def clean_and_enhance_text(text: str, pdf_name: str) -> str:
+    """Nettoie et enrichit le texte pour une meilleure indexation."""
+    cleaned = re.sub(r'\s+', ' ', text)
+    cleaned = re.sub(r'[^\w\s\-.,;:()%€£$°]', ' ', cleaned)
+    
+    # Corrections OCR
+    ocr_corrections = {
+        r'\bO\b': '0', r'\bl\b': '1', r'rn\b': 'm', r'\bS\b(?=\d)': '5',
+    }
+    
+    for pattern, replacement in ocr_corrections.items():
+        cleaned = re.sub(pattern, replacement, cleaned)
+    
+    content_type = detect_ansd_content_type(cleaned, pdf_name)
+    
+    type_context = {
+        "rgph_demographics": "DÉMOGRAPHIE POPULATION",
+        "rgph_economics": "ÉCONOMIE EMPLOI",
+        "rgph_education": "ÉDUCATION ALPHABÉTISATION",
+        "rgph_health": "SANTÉ HANDICAP",
+        "rgph_marriage": "ÉTAT MATRIMONIAL",
+        "rgph_fertility": "FÉCONDITÉ NATALITÉ",
+        "rgph_migration": "MIGRATION MOBILITÉ",
+        "rgph_methodology": "MÉTHODOLOGIE ENQUÊTE",
+        "statistics_table": "DONNÉES STATISTIQUES",
+        "executive_summary": "SYNTHÈSE RÉSULTATS"
+    }
+    
+    context_prefix = type_context.get(content_type, "ANSD SÉNÉGAL")
+    enhanced_text = f"[{context_prefix}] {cleaned}"
+    
+    return enhanced_text
+
+
+def create_smart_text_splitter() -> RecursiveCharacterTextSplitter:
+    """Crée un text splitter optimisé pour les documents ANSD."""
+    ansd_separators = [
+        "\n\n\n", "\n\n", "\n", ". ", "; ", ", ", " "
+    ]
+    
+    return RecursiveCharacterTextSplitter(
+        chunk_size=1200,
+        chunk_overlap=300,
+        separators=ansd_separators,
+        length_function=len,
+        is_separator_regex=False,
+        keep_separator=True
+    )
+
+
+def extract_geographic_regions(text: str) -> List[str]:
+    """Extrait les régions géographiques mentionnées dans le texte."""
+    senegal_regions = [
+        "dakar", "thiès", "saint-louis", "diourbel", "louga", "fatick", 
+        "kaolack", "kolda", "ziguinchor", "tambacounda", "kaffrine", 
+        "kédougou", "matam", "sédhiou", "rufisque", "pikine", "guédiawaye"
+    ]
+    
+    found_regions = []
+    text_lower = text.lower()
+    
+    for region in senegal_regions:
+        if region in text_lower:
+            found_regions.append(region.title())
+    
+    return found_regions
+
+
+# =============================================================================
+# FONCTIONS POUR L'INDEXATION VISUELLE AMÉLIORÉE
+# =============================================================================
 
 async def extract_text_from_image_content(image_path: Path, api_key: str) -> str:
-    """Extrait le texte d'une image via l'API Vision OpenAI."""
+    """Extrait le texte d'une image via l'API Vision OpenAI avec délais optimisés."""
     import base64
     import openai
+    
+    # Délai anti-rate-limit optimisé
+    await asyncio.sleep(2.5)  # 2.5 secondes entre appels
     
     if not image_path.exists():
         print(f"         ⚠️ Image non trouvée: {image_path}")
@@ -144,7 +186,6 @@ async def extract_text_from_image_content(image_path: Path, api_key: str) -> str
         with open(image_path, "rb") as image_file:
             base64_image = base64.b64encode(image_file.read()).decode('utf-8')
         
-        # Configuration client OpenAI
         client = openai.OpenAI(api_key=api_key)
         
         response = await asyncio.to_thread(
@@ -170,268 +211,89 @@ async def extract_text_from_image_content(image_path: Path, api_key: str) -> str
                     }
                 ]
             }],
-            max_tokens=1000,
-            temperature=0
+            max_tokens=500,
+            temperature=0.1
         )
         
-        content = response.choices[0].message.content
-        return content if content else ""
+        return response.choices[0].message.content.strip()
         
     except Exception as e:
-        logging.error(f"Erreur extraction vision {image_path}: {e}")
         print(f"         ❌ Erreur API Vision: {e}")
         return ""
 
 
-
 async def extract_text_from_table_content(table_path: Path) -> str:
-    """Extrait le texte d'un fichier CSV de tableau."""
-    import pandas as pd
-    
-    if not table_path.exists():
-        return ""
-    
+    """Extrait le texte d'un tableau CSV."""
     try:
-        # Lire le CSV du tableau
-        df = pd.read_csv(table_path)
+        import pandas as pd
         
-        # Convertir en format texte structuré
-        if df.empty:
+        # Lire le CSV avec différents encodages
+        encodings = ['utf-8', 'latin-1', 'cp1252']
+        df = None
+        
+        for encoding in encodings:
+            try:
+                df = pd.read_csv(table_path, encoding=encoding)
+                break
+            except UnicodeDecodeError:
+                continue
+        
+        if df is None:
             return ""
-            
-        # Limiter le nombre de lignes pour éviter les contenus trop volumineux
-        max_rows = 20
-        if len(df) > max_rows:
-            df = df.head(max_rows)
-            truncated_note = f"\n[Tableau tronqué: affichage de {max_rows} lignes sur {len(pd.read_csv(table_path))}]"
-        else:
-            truncated_note = ""
         
-        # Formatage du tableau en texte
+        # Nettoyer et formatter le contenu
+        df = df.fillna('')  # Remplacer NaN par chaîne vide
+        
+        # Construire une représentation textuelle du tableau
         text_parts = []
         
         # En-têtes
-        headers = " | ".join(str(col) for col in df.columns)
-        text_parts.append(f"Colonnes: {headers}")
+        if not df.columns.empty:
+            headers = " | ".join(str(col) for col in df.columns)
+            text_parts.append(f"Colonnes: {headers}")
         
-        # Données (lignes principales)
-        for idx, row in df.iterrows():
-            if idx >= 5:  # Limiter aux 5 premières lignes pour l'indexation
-                break
-            row_text = " | ".join(str(val) for val in row.values)
-            text_parts.append(f"Ligne {idx + 1}: {row_text}")
+        # Données (limiter aux 20 premières lignes)
+        max_rows = min(20, len(df))
+        for idx, row in df.head(max_rows).iterrows():
+            row_text = " | ".join(str(val) for val in row.values if str(val).strip())
+            if row_text.strip():
+                text_parts.append(f"Ligne {idx + 1}: {row_text}")
         
-        # Statistiques du tableau
-        text_parts.append(f"Dimensions: {len(df)} lignes × {len(df.columns)} colonnes")
+        if len(df) > max_rows:
+            text_parts.append(f"... et {len(df) - max_rows} lignes supplémentaires")
         
-        result = "\n".join(text_parts) + truncated_note
-        return result
+        return "\n".join(text_parts)
         
     except Exception as e:
-        logging.error(f"Erreur lecture tableau {table_path}: {e}")
+        logging.error(f"Erreur extraction tableau {table_path}: {e}")
         return ""
-
-async def index_local_pdfs(
-    state: IndexState,
-    *,
-    config: Optional[RunnableConfig] = None
-) -> Dict[str, Any]:
-    """
-    Étape 2: Indexation complète - texte des PDFs + contenu visuel extrait.
-    """
-    print("📚 ÉTAPE 2: Indexation du contenu textuel et visuel...")
-    
-    cfg = IndexConfiguration.from_runnable_config(config)
-    pdf_root = Path(state.pdf_root).expanduser().resolve()
-    pdf_paths = list(pdf_root.glob("**/*.pdf"))
-
-    stats = {
-        "processed_files": [],
-        "failed_files": [],
-        "total_text_chunks": 0,
-        "total_visual_content": 0,
-        "visual_indexing_stats": {
-            "charts_indexed": 0,
-            "tables_indexed": 0,
-            "charts_failed": 0,
-            "tables_failed": 0
-        },
-        "status": "Indexation en cours...",
-        "total_files_found": len(pdf_paths)
-    }
-
-    if not pdf_paths:
-        stats["status"] = "Aucun fichier PDF trouvé"
-        return stats
-
-    # Préparer le retriever
-    async with retrieval.make_retriever(config) as retriever:
-        vectorstore = retriever.vectorstore
-        splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000, chunk_overlap=200,
-            separators=["\n\n", "\n", ". ", " ", ""]
-        )
-
-        # 1. Indexer le contenu textuel des PDFs
-        print("📄 Indexation du contenu textuel...")
-        total_text_chunks = 0
-        
-        for idx, pdf in enumerate(pdf_paths, 1):
-            try:
-                loader = PyPDFLoader(str(pdf))
-                pages = await asyncio.to_thread(loader.load_and_split)
-                texts, metas, ids = [], [], []
-                now = datetime.utcnow().isoformat()
-                
-                for page_doc in pages:
-                    content = page_doc.page_content.strip()
-                    if len(content) < 50:
-                        continue
-                    chunks = splitter.split_text(content)
-                    page_num = page_doc.metadata.get("page", 0)
-                    
-                    for ci, txt in enumerate(chunks):
-                        vid = f"{pdf.stem}__p{page_num}__c{ci}"
-                        texts.append(txt)
-                        metas.append({
-                            **page_doc.metadata,
-                            "pdf_path": str(pdf),
-                            "indexed_at": now,
-                            "type": "rgph_text"
-                        })
-                        ids.append(vid)
-                
-                # Indexer le batch textuel
-                if texts:
-                    await asyncio.to_thread(
-                        vectorstore.add_texts,
-                        texts=texts,
-                        metadatas=metas,
-                        ids=ids
-                    )
-                    total_text_chunks += len(texts)
-                
-                state.mark_text_processed(str(pdf))
-                stats["processed_files"].append(pdf.name)
-                
-                print(f"   📄 PDF {idx}/{len(pdf_paths)}: {pdf.name} ({len(texts)} chunks)")
-
-            except Exception as e:
-                logging.error(f"Erreur traitement PDF {pdf.name}: {e}")
-                stats["failed_files"].append(pdf.name)
-
-        stats["total_text_chunks"] = total_text_chunks
-        print(f"✅ Contenu textuel indexé: {total_text_chunks} chunks")
-
-        # 2. Indexer le contenu visuel SI activé ET extraction complétée
-        visual_extraction_completed = getattr(state, 'visual_extraction_completed', False)
-        
-        # DEBUG: Ajouter des logs pour diagnostiquer
-        print(f"🔍 DEBUG - Vérification de l'indexation visuelle:")
-        print(f"   cfg.enable_visual_indexing: {cfg.enable_visual_indexing}")
-        print(f"   visual_extraction_completed: {visual_extraction_completed}")
-        print(f"   state has visual_extraction_completed: {hasattr(state, 'visual_extraction_completed')}")
-        
-        
-        if cfg.enable_visual_indexing and (Path(cfg.chart_index_path).exists() or Path(cfg.table_index_path).exists()):
-            print("🎨 Indexation du contenu visuel...")
-            
-            visual_stats = await index_visual_content(
-                vectorstore=vectorstore,
-                cfg=cfg
-            )
-            
-            stats["visual_indexing_stats"] = visual_stats
-            stats["total_visual_content"] = (
-                visual_stats["charts_indexed"] + visual_stats["tables_indexed"]
-            )
-            
-            # Marquer l'indexation visuelle comme terminée
-            for pdf_path in stats["processed_files"]:
-                state.mark_image_processed(pdf_path)
-            
-            print(f"✅ Contenu visuel indexé:")
-            print(f"   📊 {visual_stats['charts_indexed']} graphiques")
-            print(f"   📋 {visual_stats['tables_indexed']} tableaux")
-        
-        else:
-            # Message plus détaillé selon la cause
-            if not cfg.enable_visual_indexing:
-                print("⚠️ Indexation visuelle désactivée dans la configuration")
-            elif not visual_extraction_completed:
-                print("⚠️ Indexation visuelle ignorée (extraction non complétée)")
-                print("   Vérifiez les logs d'extraction pour identifier les problèmes")
-
-        # 3. Rapport final
-        #total_content = stats["total_text_chunks"] + stats["total_visual_content"]
-        
-        # Dans la fonction index_local_pdfs, corriger le rapport final:
-        stats["processed_files"] = [str(path) for path in pdf_paths if str(path) not in stats["failed_files"]]
-        
-        # 3. Rapport final
-        total_content = stats["total_text_chunks"] + stats["total_visual_content"]
-        
-        print("="*60)
-        print("📊 RAPPORT D'INDEXATION FINAL")
-        print("="*60)
-        print(f"📄 Chunks de texte indexés: {stats['total_text_chunks']}")
-        print(f"📊 Graphiques indexés: {stats['visual_indexing_stats']['charts_indexed']}")
-        print(f"📋 Tableaux indexés: {stats['visual_indexing_stats']['tables_indexed']}")
-        print(f"🎯 Total contenu indexé: {total_content} éléments")
-        print(f"✅ PDFs traités: {len(stats['processed_files'])}")
-        
-        if stats["failed_files"]:
-            print(f"❌ PDFs échoués: {len(stats['failed_files'])}")
-        
-        # Statistiques d'échecs visuels
-        visual_stats = stats["visual_indexing_stats"]
-        if visual_stats["charts_failed"] > 0 or visual_stats["tables_failed"] > 0:
-            print(f"⚠️ Échecs visuels: {visual_stats['charts_failed']} graphiques, {visual_stats['tables_failed']} tableaux")
-        
-        print("="*60)
-        
-        stats["status"] = f"Indexation terminée - {total_content} éléments indexés"
-        return stats
-
-
 
 
 async def index_visual_content(vectorstore, cfg: IndexConfiguration) -> Dict[str, int]:
-    """
-    Indexe le contenu visuel (graphiques et tableaux) extrait.
-    
-    Args:
-        vectorstore: Vector store Pinecone
-        cfg: Configuration d'indexation
-        
-    Returns:
-        Statistiques d'indexation visuelle
-    """
-    import pandas as pd
-    
+    """Indexe le contenu visuel (graphiques et tableaux) extrait - VERSION AMÉLIORÉE."""
     stats = {
         "charts_indexed": 0,
         "tables_indexed": 0,
         "charts_failed": 0,
-        "tables_failed": 0
+        "tables_failed": 0,
+        "total_visual_indicators": 0
     }
     
-    # 1. Indexer les graphiques
+    # 1. Indexer les graphiques avec traitement intelligent
     charts_path = Path(cfg.chart_index_path)
     if charts_path.exists():
         try:
             charts_df = pd.read_csv(charts_path)
-            print(f"   📊 Indexation de {len(charts_df)} graphiques...")
+            print(f"   📊 Indexation intelligente de {len(charts_df)} graphiques...")
             
-            # Traiter par petits batches
-            batch_size = getattr(cfg, 'visual_batch_size', 5)
+            batch_size = getattr(cfg, 'visual_batch_size', 2)  # Batch plus petit pour stabilité
             total_processed = 0
             
             for i in range(0, len(charts_df), batch_size):
                 batch = charts_df.iloc[i:i+batch_size]
                 texts, metadatas, ids = [], [], []
                 
-                print(f"      🔄 Traitement batch {i//batch_size + 1}/{(len(charts_df)-1)//batch_size + 1}")
+                print(f"      🔄 Traitement batch graphiques {i//batch_size + 1}/{(len(charts_df)-1)//batch_size + 1}")
                 
                 for idx, row in batch.iterrows():
                     try:
@@ -445,14 +307,28 @@ async def index_visual_content(vectorstore, cfg: IndexConfiguration) -> Dict[str
                         )
                         
                         if extracted_text and len(extracted_text.strip()) > 10:
-                            # Créer le contenu du document
+                            # Nettoyer et enrichir le texte extrait
+                            enhanced_text = clean_and_enhance_text(extracted_text, image_path.name)
+                            
+                            # Extraire les indicateurs du contenu visuel
+                            indicators = extract_numerical_indicators(enhanced_text)
+                            stats["total_visual_indicators"] += len(indicators)
+                            
+                            # Détecter le type de graphique
+                            chart_type = detect_chart_type(enhanced_text, image_path.name)
+                            
+                            # Créer le contenu du document enrichi
                             content_parts = [
-                                f"Type: Graphique ANSD",
+                                f"Type: Graphique ANSD ({chart_type})",
                                 f"Caption: {row.get('caption', 'Non spécifiée')}",
                                 f"Source PDF: {Path(row.get('pdf_path', '')).name}",
                                 f"Page: {row.get('page', 'N/A')}",
-                                f"Contenu extrait: {extracted_text}"
+                                f"Contenu extrait: {enhanced_text}"
                             ]
+                            
+                            if indicators:
+                                indicators_text = "; ".join([f"{ind['type']}: {ind['value']}" for ind in indicators])
+                                content_parts.append(f"Indicateurs détectés: {indicators_text}")
                             
                             content = "\n".join(content_parts)
                             
@@ -460,6 +336,7 @@ async def index_visual_content(vectorstore, cfg: IndexConfiguration) -> Dict[str
                             metadata = {
                                 "type": "visual_chart",
                                 "source_type": "visual",
+                                "chart_type": chart_type,
                                 "image_id": str(row.get('image_id', f"chart_{idx}")),
                                 "pdf_path": str(row.get('pdf_path', '')),
                                 "pdf_name": Path(row.get('pdf_path', '')).name,
@@ -468,11 +345,22 @@ async def index_visual_content(vectorstore, cfg: IndexConfiguration) -> Dict[str
                                 "caption": str(row.get('caption', '')),
                                 "indexed_at": datetime.utcnow().isoformat(),
                                 "content_source": "vision_api_extraction",
-                                "content_length": len(extracted_text)
+                                "content_length": len(extracted_text),
+                                "indicators_count": len(indicators),
+                                "document_source": "ansd_rgph",
+                                "language": "french",
+                                "country": "senegal"
                             }
                             
-                            # ID unique pour éviter les doublons
-                            doc_id = f"visual_chart_{row.get('image_id', idx)}"
+                            if indicators:
+                                metadata["numerical_indicators"] = [
+                                    {"type": ind["type"], "value": ind["value"]} 
+                                    for ind in indicators
+                                ]
+                            
+                            # ID sécurisé
+                            raw_chart_id = f"visual_chart_{row.get('image_id', idx)}"
+                            doc_id = sanitize_pinecone_id(raw_chart_id)
                             
                             texts.append(content)
                             metadatas.append(metadata)
@@ -508,8 +396,8 @@ async def index_visual_content(vectorstore, cfg: IndexConfiguration) -> Dict[str
                 else:
                     print(f"      ⚠️ Aucun texte valide dans ce batch")
                 
-                # Petite pause pour éviter les limites de taux API
-                await asyncio.sleep(1)
+                # Pause pour éviter les limites API
+                await asyncio.sleep(1.5)
             
             print(f"   📊 Graphiques traités: {total_processed}/{len(charts_df)}")
                         
@@ -522,10 +410,9 @@ async def index_visual_content(vectorstore, cfg: IndexConfiguration) -> Dict[str
     if tables_path.exists():
         try:
             tables_df = pd.read_csv(tables_path)
-            print(f"   📋 Indexation de {len(tables_df)} tableaux...")
+            print(f"   📋 Indexation intelligente de {len(tables_df)} tableaux...")
             
-            # Traiter par petits batches
-            batch_size = getattr(cfg, 'visual_batch_size', 10)  # Plus rapide pour les tableaux
+            batch_size = getattr(cfg, 'visual_batch_size', 3)  # Tableaux plus rapides
             total_processed = 0
             
             for i in range(0, len(tables_df), batch_size):
@@ -544,14 +431,25 @@ async def index_visual_content(vectorstore, cfg: IndexConfiguration) -> Dict[str
                         extracted_text = await extract_text_from_table_content(table_path)
                         
                         if extracted_text and len(extracted_text.strip()) > 20:
+                            # Enrichir le contenu du tableau
+                            enhanced_text = clean_and_enhance_text(extracted_text, table_path.name)
+                            
+                            # Extraire les indicateurs
+                            indicators = extract_numerical_indicators(enhanced_text)
+                            stats["total_visual_indicators"] += len(indicators)
+                            
                             # Créer le contenu du document
                             content_parts = [
                                 f"Type: Tableau ANSD",
                                 f"Caption: {row.get('caption', 'Non spécifiée')}",
                                 f"Source PDF: {Path(row.get('pdf_path', '')).name}",
                                 f"Page: {row.get('page', 'N/A')}",
-                                f"Données du tableau: {extracted_text}"
+                                f"Données du tableau: {enhanced_text}"
                             ]
+                            
+                            if indicators:
+                                indicators_text = "; ".join([f"{ind['type']}: {ind['value']}" for ind in indicators])
+                                content_parts.append(f"Indicateurs détectés: {indicators_text}")
                             
                             content = "\n".join(content_parts)
                             
@@ -567,11 +465,22 @@ async def index_visual_content(vectorstore, cfg: IndexConfiguration) -> Dict[str
                                 "caption": str(row.get('caption', '')),
                                 "indexed_at": datetime.utcnow().isoformat(),
                                 "content_source": "csv_parsing",
-                                "content_length": len(extracted_text)
+                                "content_length": len(extracted_text),
+                                "indicators_count": len(indicators),
+                                "document_source": "ansd_rgph",
+                                "language": "french",
+                                "country": "senegal"
                             }
                             
-                            # ID unique
-                            doc_id = f"visual_table_{row.get('table_id', idx)}"
+                            if indicators:
+                                metadata["numerical_indicators"] = [
+                                    {"type": ind["type"], "value": ind["value"]} 
+                                    for ind in indicators
+                                ]
+                            
+                            # ID sécurisé
+                            raw_table_id = f"visual_table_{row.get('table_id', idx)}"
+                            doc_id = sanitize_pinecone_id(raw_table_id)
                             
                             texts.append(content)
                             metadatas.append(metadata)
@@ -606,6 +515,9 @@ async def index_visual_content(vectorstore, cfg: IndexConfiguration) -> Dict[str
                         stats["tables_failed"] += len(texts)
                 else:
                     print(f"      ⚠️ Aucun contenu valide dans ce batch")
+                
+                # Petite pause
+                await asyncio.sleep(0.5)
             
             print(f"   📋 Tableaux traités: {total_processed}/{len(tables_df)}")
                         
@@ -616,9 +528,343 @@ async def index_visual_content(vectorstore, cfg: IndexConfiguration) -> Dict[str
     return stats
 
 
+def detect_chart_type(text: str, filename: str) -> str:
+    """Détecte le type de graphique basé sur le contenu."""
+    text_lower = text.lower()
+    filename_lower = filename.lower()
+    
+    chart_patterns = {
+        "pyramide_ages": ["pyramide", "âges", "population par âge"],
+        "evolution_temporelle": ["évolution", "tendance", "années", "croissance"],
+        "repartition": ["répartition", "pourcentage", "distribution"],
+        "comparaison_regionale": ["région", "régional", "départements"],
+        "indicateur_demographique": ["taux", "densité", "mortalité", "natalité"],
+        "graphique_economique": ["emploi", "activité", "secteur", "économique"],
+        "carte_geographique": ["carte", "géographique", "localisation"]
+    }
+    
+    # Vérifier le nom du fichier
+    for chart_type, keywords in chart_patterns.items():
+        if any(keyword in filename_lower for keyword in keywords):
+            return chart_type
+    
+    # Vérifier le contenu
+    for chart_type, keywords in chart_patterns.items():
+        if any(keyword in text_lower for keyword in keywords):
+            return chart_type
+    
+    return "graphique_general"
 
 
-# Construction du graphe avec la nouvelle étape d'extraction
+# =============================================================================
+# FONCTIONS PRINCIPALES
+# =============================================================================
+
+def check_index_config(
+    state: IndexState,
+    *,
+    config: Optional[RunnableConfig] = None
+) -> Dict[str, Any]:
+    """Valide la configuration et le répertoire PDF."""
+    configuration = IndexConfiguration.from_runnable_config(config)
+
+    if not configuration.api_key:
+        raise ValueError("API key is required for document indexing.")
+
+    # Validation optionnelle de l'INDEX_API_KEY pour plus de flexibilité
+    # if configuration.api_key != os.getenv("INDEX_API_KEY"):
+    #     raise ValueError("Authentication failed: Invalid API key provided.")
+
+    if configuration.retriever_provider != "pinecone":
+        raise ValueError(
+            "Only Pinecone is currently supported for document indexing."
+        )
+
+    if not state.pdf_root:
+        raise ValueError("pdf_root doit être spécifié et non vide")
+
+    pdf_root = Path(state.pdf_root).expanduser().resolve()
+    if not pdf_root.exists():
+        raise FileNotFoundError(f"Répertoire PDF introuvable : {pdf_root}")
+    
+    if not pdf_root.is_dir():
+        raise ValueError(f"pdf_root doit être un répertoire : {pdf_root}")
+
+    pdf_files = list(pdf_root.glob("**/*.pdf"))
+    total_size = sum(f.stat().st_size for f in pdf_files if f.exists())
+    
+    logging.info(f"📁 Répertoire validé: {pdf_root}")
+    logging.info(f"📄 {len(pdf_files)} fichiers PDF trouvés")
+    logging.info(f"💾 Taille totale: {total_size/1024/1024:.1f} MB")
+
+    return {"total_files_found": len(pdf_files)}
+
+
+async def extract_visual_content(
+    state: IndexState,
+    *,
+    config: Optional[RunnableConfig] = None
+) -> Dict[str, Any]:
+    """Étape 1: Extraire les graphiques et tableaux des PDFs."""
+    print("🔍 ÉTAPE 1: Extraction du contenu visuel des PDFs...")
+    
+    cfg = IndexConfiguration.from_runnable_config(config)
+    pdf_root = Path(state.pdf_root).expanduser().resolve()
+    
+    if not cfg.enable_visual_indexing:
+        print("⚠️ Extraction visuelle désactivée dans la configuration")
+        return {
+            "visual_extraction_completed": True,
+            "total_images_extracted": 0,
+            "total_tables_extracted": 0,
+            "extraction_errors": ["Extraction visuelle désactivée dans la configuration"]
+        }
+    
+    try:
+        extractor = PDFVisualExtractor(
+            output_dir=cfg.output_dir if hasattr(cfg, 'output_dir') else ".",
+            images_dir=cfg.images_dir,
+            tables_dir=cfg.tables_dir
+        )
+        
+        print(f"📁 Extraction depuis: {pdf_root}")
+        
+        extraction_result = await asyncio.to_thread(
+            extractor.process_directory,
+            pdf_root
+        )
+        
+        print(f"✅ Extraction terminée:")
+        print(f"   📊 {extraction_result['total_images']} images extraites")
+        print(f"   📋 {extraction_result['total_tables']} tableaux extraits")
+        print(f"   📄 {extraction_result['processed_pdfs']} PDFs traités")
+        
+        return {
+            "visual_extraction_completed": True,
+            "total_images_extracted": extraction_result["total_images"],
+            "total_tables_extracted": extraction_result["total_tables"],
+            "extraction_errors": extraction_result.get("processing_errors", [])
+        }
+        
+    except Exception as e:
+        error_msg = f"Erreur lors de l'extraction visuelle: {e}"
+        logging.error(error_msg)
+        print(f"❌ {error_msg}")
+        
+        return {
+            "visual_extraction_completed": False,
+            "total_images_extracted": 0,
+            "total_tables_extracted": 0,
+            "extraction_errors": [error_msg]
+        }
+
+
+async def index_local_pdfs(
+    state: IndexState,
+    *,
+    config: Optional[RunnableConfig] = None
+) -> Dict[str, Any]:
+    """Indexe tous les PDFs avec traitement intelligent du texte ET des images."""
+    print("📚 ÉTAPE 2: Indexation du contenu textuel et visuel...")
+    
+    cfg = IndexConfiguration.from_runnable_config(config)
+    pdf_root = Path(state.pdf_root).expanduser().resolve()
+    pdf_paths = list(pdf_root.glob("**/*.pdf"))
+    
+    stats = {
+        "processed_files": [],
+        "failed_files": [],
+        "total_text_chunks": 0,
+        "total_visual_content": 0,
+        "total_indicators_extracted": 0,
+        "content_types_found": set(),
+        "regions_mentioned": set(),
+        "visual_indexing_stats": {
+            "charts_indexed": 0,
+            "tables_indexed": 0,
+            "charts_failed": 0,
+            "tables_failed": 0,
+            "total_visual_indicators": 0
+        },
+        "status": "Indexation intelligente complète en cours...",
+        "total_files_found": len(pdf_paths)
+    }
+
+    if not pdf_paths:
+        return {
+            **stats,
+            "status": "Aucun fichier PDF trouvé dans le répertoire"
+        }
+
+    logging.info(f"🚀 Début de l'indexation complète de {len(pdf_paths)} PDFs")
+    now_str = datetime.utcnow().isoformat()
+    
+    async with retrieval.make_retriever(config) as retriever:
+        vectorstore = retriever.vectorstore
+        
+        # 1. Indexation du contenu textuel
+        print("📄 Indexation du contenu textuel...")
+        text_splitter = create_smart_text_splitter()
+        all_texts, all_metadatas, all_ids = [], [], []
+
+        for idx, pdf_path in enumerate(pdf_paths, 1):
+            try:
+                logging.info(f"📖 ({idx}/{len(pdf_paths)}) Traitement textuel: {pdf_path.name}")
+                
+                loader = PyPDFLoader(str(pdf_path))
+                pages = await asyncio.to_thread(loader.load_and_split)
+                
+                file_chunks = 0
+                file_indicators = 0
+                
+                for page_doc in pages:
+                    raw_text = page_doc.page_content.strip()
+                    if not raw_text or len(raw_text) < 50:
+                        continue
+
+                    enhanced_text = clean_and_enhance_text(raw_text, pdf_path.name)
+                    indicators = extract_numerical_indicators(enhanced_text)
+                    file_indicators += len(indicators)
+                    
+                    regions = extract_geographic_regions(enhanced_text)
+                    stats["regions_mentioned"].update(regions)
+                    
+                    content_type = detect_ansd_content_type(enhanced_text, pdf_path.name)
+                    stats["content_types_found"].add(content_type)
+                    
+                    chunks = text_splitter.split_text(enhanced_text)
+                    page_num = page_doc.metadata.get("page", 0)
+                    
+                    for chunk_idx, chunk_text in enumerate(chunks):
+                        raw_id = f"{pdf_path.stem}_p{page_num}_c{chunk_idx}"
+                        vector_id = sanitize_pinecone_id(raw_id)
+
+                        metadata = {
+                            "page_num": page_num,
+                            "chunk_idx": chunk_idx,
+                            "pdf_path": str(pdf_path),
+                            "pdf_name": pdf_path.name,
+                            "pdf_dir": str(pdf_path.parent),
+                            "file_size": pdf_path.stat().st_size,
+                            "indexed_at": now_str,
+                            "content_type": content_type,
+                            "chunk_length": len(chunk_text),
+                            "regions_mentioned": list(regions),
+                            "indicators_count": len([ind for ind in indicators if chunk_text in ind["context"]]),
+                            "document_source": "ansd_rgph",
+                            "language": "french",
+                            "country": "senegal",
+                            "type": "text_content"
+                        }
+                        
+                        chunk_indicators = [
+                            ind for ind in indicators 
+                            if any(word in chunk_text.lower() for word in ind["context"].lower().split())
+                        ]
+                        
+                        if chunk_indicators:
+                            metadata["numerical_indicators"] = [
+                                {"type": ind["type"], "value": ind["value"]} 
+                                for ind in chunk_indicators
+                            ]
+
+                        all_texts.append(chunk_text)
+                        all_metadatas.append(metadata)
+                        all_ids.append(vector_id)
+                        file_chunks += 1
+                
+                if file_chunks > 0:
+                    stats["processed_files"].append(pdf_path.name)
+                    stats["total_indicators_extracted"] += file_indicators
+                    logging.info(f"✅ {pdf_path.name}: {file_chunks} chunks, {file_indicators} indicateurs")
+                        
+            except Exception as e:
+                logging.error(f"❌ Erreur textuelle {pdf_path.name}: {e}")
+                stats["failed_files"].append(pdf_path.name)
+                continue
+
+        # Indexation textuelle par lots
+        if all_texts:
+            batch_size = 25
+            successfully_indexed = 0
+            
+            for i in range(0, len(all_texts), batch_size):
+                batch_texts = all_texts[i:i + batch_size]
+                batch_metadatas = all_metadatas[i:i + batch_size]
+                batch_ids = all_ids[i:i + batch_size]
+                
+                try:
+                    await asyncio.to_thread(
+                        vectorstore.add_texts,
+                        texts=batch_texts,
+                        metadatas=batch_metadatas,
+                        ids=batch_ids
+                    )
+                    successfully_indexed += len(batch_texts)
+                    await asyncio.sleep(0.1)
+                    
+                except Exception as e:
+                    logging.error(f"Erreur indexation batch texte {i//batch_size + 1}: {e}")
+                    continue
+            
+            stats["total_text_chunks"] = successfully_indexed
+            print(f"✅ Contenu textuel indexé: {successfully_indexed} chunks")
+
+        # 2. Indexation du contenu visuel SI activé ET extraction complétée
+        visual_extraction_completed = getattr(state, 'visual_extraction_completed', False)
+        
+        if cfg.enable_visual_indexing and (Path(cfg.chart_index_path).exists() or Path(cfg.table_index_path).exists()):
+            print("🎨 Indexation du contenu visuel...")
+            
+            visual_stats = await index_visual_content(
+                vectorstore=vectorstore,
+                cfg=cfg
+            )
+            
+            stats["visual_indexing_stats"] = visual_stats
+            stats["total_visual_content"] = (
+                visual_stats["charts_indexed"] + visual_stats["tables_indexed"]
+            )
+            
+            print(f"✅ Contenu visuel indexé:")
+            print(f"   📊 {visual_stats['charts_indexed']} graphiques")
+            print(f"   📋 {visual_stats['tables_indexed']} tableaux")
+            print(f"   🔢 {visual_stats.get('total_visual_indicators', 0)} indicateurs visuels")
+        
+        else:
+            if not cfg.enable_visual_indexing:
+                print("⚠️ Indexation visuelle désactivée dans la configuration")
+            else:
+                print("⚠️ Indexation visuelle ignorée (fichiers d'index non trouvés)")
+
+        # 3. Rapport final enrichi
+        stats["content_types_found"] = list(stats["content_types_found"])
+        stats["regions_mentioned"] = list(stats["regions_mentioned"])
+        
+        total_content = stats["total_text_chunks"] + stats["total_visual_content"]
+        success_rate = len(stats["processed_files"]) / len(pdf_paths) * 100
+        
+        final_status = (
+            f"Indexation complète terminée: {total_content} éléments "
+            f"({stats['total_text_chunks']} texte + {stats['total_visual_content']} visuel) "
+            f"depuis {len(stats['processed_files'])}/{len(pdf_paths)} PDFs "
+            f"({success_rate:.1f}% succès)"
+        )
+
+        logging.info(f"🎉 {final_status}")
+        logging.info(f"📊 Types de contenu: {', '.join(stats['content_types_found'])}")
+        logging.info(f"🗺️ Régions mentionnées: {', '.join(stats['regions_mentioned'])}")
+        
+        return {
+            **stats,
+            "status": final_status
+        }
+
+
+# =============================================================================
+# CONSTRUCTION DU GRAPHE COMPLET
+# =============================================================================
+
 builder = StateGraph(IndexState, input=InputState, config_schema=IndexConfiguration)
 
 # Nœuds
@@ -634,4 +880,4 @@ builder.add_edge("index_local_pdfs", END)
 
 # Compilation
 graph = builder.compile()
-graph.name = "CompleteIndexGraphWithVisualExtraction"
+graph.name = "CompleteIntelligentANSDIndexGraph"

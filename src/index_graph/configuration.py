@@ -19,7 +19,7 @@ class IndexConfiguration(BaseConfiguration):
         metadata={"description": "Clé OpenAI pour embeddings textuels et extraction visuelle."}
     )
     pinecone_index: str = field(
-        default="ansd-doc",
+        default="index-ansd",
         metadata={"description": "Nom de l'index Pinecone pour le texte et contenu visuel."}
     )
 

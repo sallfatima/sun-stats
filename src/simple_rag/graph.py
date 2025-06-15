@@ -6,6 +6,8 @@
 Système RAG simple amélioré pour l'ANSD avec support du contenu visuel.
 """
 
+import os
+import asyncio
 from typing import Dict, List, Any, Tuple
 import re
 
@@ -13,7 +15,7 @@ from langchain import hub
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.prompts import PromptTemplate
 from langchain.prompts import ChatPromptTemplate
-
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 
 from shared import retrieval
@@ -244,36 +246,6 @@ def format_docs_with_rich_metadata(docs: List[Any]) -> str:
     return "\n".join(formatted_parts)
 
 
-def analyze_retrieved_documents(documents: List[Any]) -> Tuple[List[Any], List[Any]]:
-    """
-    Analyse et sépare les documents textuels des documents visuels.
-    
-    Args:
-        documents: Liste des documents récupérés
-        
-    Returns:
-        Tuple (documents_textuels, documents_visuels)
-    """
-    text_docs = []
-    visual_docs = []
-    
-    for doc in documents:
-        metadata = getattr(doc, 'metadata', {})
-        doc_type = metadata.get('type', '')
-        source_type = metadata.get('source_type', '')
-        
-        # Identifier les documents visuels
-        if (doc_type in ['visual_chart', 'visual_table'] or 
-            source_type == 'visual' or
-            'image_path' in metadata or 
-            'table_path' in metadata):
-            visual_docs.append(doc)
-        else:
-            text_docs.append(doc)
-    
-    return text_docs, visual_docs
-
-
 def enrich_query_for_visual_content(question: str) -> str:
     """
     Enrichit la requête pour améliorer la récupération de contenu visuel.
@@ -322,59 +294,186 @@ def enrich_query_for_visual_content(question: str) -> str:
 # FONCTIONS PRINCIPALES DU WORKFLOW
 # =============================================================================
 
-async def retrieve(state: GraphState, *, config: RagConfiguration):
-    """Récupération améliorée avec support du contenu visuel et scoring intelligent."""
-    
+async def retrieve(state: GraphState, config: RunnableConfig) -> dict:
+    """
+    Fonction de récupération corrigée pour Pinecone avec gestion d'état appropriée
+    """
     print("🔍 ---RETRIEVE AVEC SUPPORT VISUEL AMÉLIORÉ---")
     
-    # Extraire la question
-    last_message = state.messages[-1]
-    question = last_message.content if hasattr(last_message, 'content') else str(last_message)
-    
-    print(f"❓ Question originale: {question}")
-    
-    # Enrichir la requête pour le contenu visuel
-    enriched_query = enrich_query_for_visual_content(question)
-    
-    # Prétraitement additionnel
-    processed_query = preprocess_query(enriched_query)
-    
-    print(f"🔍 Requête enrichie: {processed_query}")
-    
-    # Configuration de recherche optimisée
-    with retrieval.make_retriever(config) as retriever:
-        # Recherche avec la requête enrichie
-        documents = retriever.invoke(processed_query)
-    
-    print(f"📄 Documents récupérés: {len(documents)}")
-    
-    # Analyser et classer les documents
-    text_docs, visual_docs = analyze_retrieved_documents(documents)
-    
-    print(f"📝 Documents textuels: {len(text_docs)}")
-    print(f"🎨 Documents visuels: {len(visual_docs)}")
-    
-    # Afficher les détails des documents visuels trouvés
-    if visual_docs:
-        print("🎨 Éléments visuels détectés:")
-        for i, doc in enumerate(visual_docs, 1):
+    try:
+        # CORRECTION PRINCIPALE : Accès correct aux messages selon le type de GraphState
+        messages = []
+        
+        # Méthode 1 : Si state a un attribut messages
+        if hasattr(state, 'messages'):
+            messages = state.messages
+        # Méthode 2 : Si state est un dictionnaire
+        elif isinstance(state, dict) and 'messages' in state:
+            messages = state['messages']
+        # Méthode 3 : Si state a une méthode d'accès spécifique
+        elif hasattr(state, '__getitem__'):
+            try:
+                messages = state['messages']
+            except (KeyError, TypeError):
+                messages = []
+        
+        if not messages:
+            print("⚠️ Aucun message trouvé dans l'état")
+            return {"documents": []}
+        
+        # Récupérer la dernière question
+        last_message = messages[-1]
+        if hasattr(last_message, 'content'):
+            user_question = last_message.content
+        else:
+            user_question = str(last_message)
+        
+        print(f"❓ Question originale: {user_question}")
+        
+        # Enrichir la requête avec support visuel
+        enriched_query = enrich_query_for_visual_content(user_question)
+        print(f"🔍 Requête enrichie: {enriched_query}")
+        
+        # Configuration de récupération
+        configuration = RagConfiguration.from_runnable_config(config)
+        retrieval_k = getattr(configuration, 'retrieval_k', 15)
+        
+        # CORRECTION : Appel sécurisé du retriever Pinecone
+        try:
+            retriever = load_pinecone_retriever(configuration)
+            
+            # Utiliser run_in_executor pour éviter les problèmes de contexte asynchrone
+            loop = asyncio.get_event_loop()
+            
+            def sync_retrieve():
+                """Fonction synchrone pour récupérer les documents"""
+                try:
+                    # Essayer différentes méthodes selon ce qui est disponible
+                    if hasattr(retriever, 'get_relevant_documents'):
+                        return retriever.get_relevant_documents(enriched_query)
+                    elif hasattr(retriever, 'similarity_search'):
+                        return retriever.similarity_search(enriched_query, k=retrieval_k)
+                    elif hasattr(retriever, 'invoke'):
+                        return retriever.invoke(enriched_query)
+                    else:
+                        print("❌ Aucune méthode de récupération trouvée sur le retriever")
+                        return []
+                except Exception as e:
+                    print(f"❌ Erreur dans sync_retrieve: {e}")
+                    return []
+            
+            print("🔄 Appel du retriever Pinecone via run_in_executor...")
+            documents = await loop.run_in_executor(None, sync_retrieve)
+            print(f"✅ Récupération Pinecone réussie: {len(documents)} documents")
+        
+        except Exception as e:
+            print(f"❌ Erreur dans l'appel du retriever Pinecone: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            # Fallback : retourner des documents vides plutôt que de planter
+            print("🔄 Utilisation de fallback...")
+            documents = []
+        
+        print(f"📄 Documents récupérés: {len(documents)}")
+        
+        # Analyse et filtrage des documents
+        if documents:
+            try:
+                documents = analyze_and_score_documents(documents, user_question)
+                print(f"📊 Après analyse: {len(documents)} documents")
+            except Exception as e:
+                print(f"⚠️ Erreur dans analyze_and_score_documents: {e}")
+                # Garder les documents originaux si l'analyse échoue
+        
+        return {"documents": documents}
+        
+    except Exception as e:
+        print(f"❌ ERREUR GLOBALE dans retrieve: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"documents": []}
+
+
+def load_pinecone_retriever(configuration):
+    """
+    Charge le retriever Pinecone de manière sécurisée
+    """
+    try:
+        print("🔌 Chargement retriever Pinecone...")
+        from langchain_pinecone import PineconeVectorStore
+        from langchain_openai import OpenAIEmbeddings
+        
+        # Configuration des embeddings
+        embeddings = OpenAIEmbeddings()
+        
+        # Configuration Pinecone
+        index_name = getattr(configuration, 'pinecone_index', os.getenv('PINECONE_INDEX', 'index-ansd'))
+        print(f"📌 Index Pinecone: {index_name}")
+        
+        # Créer le vectorstore
+        vectorstore = PineconeVectorStore.from_existing_index(
+            index_name=index_name,
+            embedding=embeddings
+        )
+        
+        # Créer le retriever
+        retriever = vectorstore.as_retriever(
+            search_kwargs={
+                "k": getattr(configuration, 'retrieval_k', 15),
+                "score_threshold": 0.5  # Optionnel : seuil de pertinence
+            }
+        )
+        
+        print("✅ Retriever Pinecone chargé avec succès")
+        return retriever
+        
+    except Exception as e:
+        print(f"❌ Erreur chargement retriever Pinecone: {e}")
+        raise e
+
+
+def analyze_and_score_documents(documents: List[Any], query: str) -> List[Any]:
+    """
+    Analyse et score les documents récupérés, sépare le contenu visuel
+    """
+    try:
+        if not documents:
+            return documents
+        
+        # Séparer et scorer les documents
+        text_docs = []
+        visual_docs = []
+        
+        for doc in documents:
             metadata = getattr(doc, 'metadata', {})
-            doc_type = metadata.get('type', 'unknown')
-            caption = metadata.get('caption', 'Sans titre')
-            print(f"   {i}. {doc_type}: {caption}")
-    
-    # Combiner tous les documents pour le processing suivant
-    all_documents = text_docs + visual_docs
-    
-    # Appliquer un scoring intelligent pour prioriser les documents pertinents
-    scored_documents = score_documents_relevance(all_documents, question)
-    
-    # Prendre les 20 meilleurs documents
-    best_documents = [doc for score, doc in scored_documents[:20]]
-    
-    print(f"✅ Documents sélectionnés après scoring: {len(best_documents)}")
-    
-    return {"documents": best_documents, "messages": state.messages}
+            doc_type = metadata.get('type', '')
+            
+            # Identifier les documents visuels
+            if doc_type in ['visual_chart', 'visual_table']:
+                visual_docs.append(doc)
+            else:
+                text_docs.append(doc)
+        
+        # Scorer et trier les documents textuels
+        if text_docs:
+            scored_text_docs = score_documents_relevance(text_docs, query)
+            text_docs = [doc for score, doc in scored_text_docs]
+        
+        # Scorer et trier les documents visuels
+        if visual_docs:
+            scored_visual_docs = score_documents_relevance(visual_docs, query)
+            visual_docs = [doc for score, doc in scored_visual_docs]
+        
+        # Combiner en priorisant les documents textuels puis visuels
+        combined_docs = text_docs + visual_docs
+        
+        print(f"📊 Documents triés: {len(text_docs)} textuels + {len(visual_docs)} visuels")
+        return combined_docs
+        
+    except Exception as e:
+        print(f"⚠️ Erreur analyse documents: {e}")
+        return documents
 
 
 async def generate(state: GraphState, *, config: RagConfiguration):
@@ -399,7 +498,17 @@ async def generate(state: GraphState, *, config: RagConfiguration):
     print(f"📄 Total documents: {len(documents)}")
     
     # Séparer le contenu textuel et visuel
-    text_docs, visual_docs = analyze_retrieved_documents(documents)
+    text_docs = []
+    visual_docs = []
+    
+    for doc in documents:
+        metadata = getattr(doc, 'metadata', {})
+        doc_type = metadata.get('type', '')
+        
+        if doc_type in ['visual_chart', 'visual_table']:
+            visual_docs.append(doc)
+        else:
+            text_docs.append(doc)
     
     print(f"📝 Documents textuels pour génération: {len(text_docs)}")
     print(f"🎨 Documents visuels détectés: {len(visual_docs)}")
@@ -508,27 +617,8 @@ def create_visual_content_summary(visual_docs: List[Any]) -> str:
 
 
 # =============================================================================
-# FONCTIONS DE DEBUG ET DIAGNOSTIC (CONSERVÉES DE VOTRE CODE)
+# FONCTIONS DE DEBUG ET DIAGNOSTIC
 # =============================================================================
-
-def diagnose_sources(documents: List[Any], response_content: str) -> None:
-    """Diagnostic des sources pour déboguer."""
-    
-    print("\n🔍 DIAGNOSTIC DES SOURCES:")
-    print("="*50)
-    
-    # Analyser les documents
-    print(f"📄 Documents fournis: {len(documents)}")
-    for i, doc in enumerate(documents, 1):
-        metadata = doc.metadata if hasattr(doc, 'metadata') else {}
-        print(f"   Document {i}:")
-        print(f"      pdf_name: {metadata.get('pdf_name', 'Non défini')}")
-        print(f"      page_num: {metadata.get('page_num', 'Non défini')}")
-        print(f"      source: {metadata.get('source', 'Non défini')}")
-        print(f"      type: {metadata.get('type', 'Non défini')}")
-    
-    print("="*50)
-
 
 def extract_priority_sources(documents: List[Any]) -> List[str]:
     """Extrait les sources prioritaires des documents."""
@@ -553,77 +643,6 @@ def extract_priority_sources(documents: List[Any]) -> List[str]:
             priority_sources.append(", ".join(source_parts))
     
     return list(set(priority_sources))  # Supprimer les doublons
-
-
-def use_document_sources(response_content: str, priority_sources: List[str]) -> str:
-    """Utilise les sources des documents dans la réponse."""
-    
-    if priority_sources:
-        sources_section = f"\n\n📚 **Sources consultées :**\n"
-        for i, source in enumerate(priority_sources[:5], 1):  # Limiter à 5 sources
-            sources_section += f"• {source}\n"
-        
-        return response_content + sources_section
-    
-    return response_content
-
-
-def preserve_llm_sources(response_content: str) -> str:
-    """Préserve les sources générées par le LLM."""
-    return response_content
-
-
-# =============================================================================
-# VERSION DEBUG AVEC DIAGNOSTIC COMPLET (CONSERVÉE)
-# =============================================================================
-
-async def generate_with_debug(state: GraphState, *, config: RagConfiguration):
-    """Version avec diagnostic pour déboguer les sources."""
-    
-    print("🤖 ---GENERATE AVEC DEBUG SOURCES---")
-    
-    messages = state.messages
-    documents = state.documents
-    
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", IMPROVED_ANSD_SYSTEM_PROMPT),
-        ("placeholder", "{messages}")
-    ])
-    
-    configuration = RagConfiguration.from_runnable_config(config)
-    model = load_chat_model(configuration.model)
-    context = format_docs_with_rich_metadata(documents)
-    
-    try:
-        rag_chain = prompt | model
-        response = await rag_chain.ainvoke({
-            "context": context,
-            "messages": messages
-        })
-        
-        response_content = response.content
-        
-        # DIAGNOSTIC COMPLET
-        diagnose_sources(documents, response_content)
-        
-        # Appliquer la logique de priorité
-        priority_sources = extract_priority_sources(documents)
-        
-        if priority_sources:
-            print("🔝 STRATÉGIE: Utilisation des sources de documents")
-            final_response = use_document_sources(response_content, priority_sources)
-        else:
-            print("🤖 STRATÉGIE: Conservation des sources LLM")
-            final_response = preserve_llm_sources(response_content)
-        
-        enhanced_response = AIMessage(content=final_response)
-        
-        return {"messages": [enhanced_response], "documents": documents}
-        
-    except Exception as e:
-        print(f"❌ Erreur: {e}")
-        fallback = AIMessage(content="❌ Erreur technique ANSD.")
-        return {"messages": [fallback], "documents": documents}
 
 
 # =============================================================================
