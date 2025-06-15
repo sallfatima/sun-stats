@@ -1,0 +1,6 @@
+/* 1. Lien “Built with Chainlit” dans le footer */
+a[href*="https://github.com/Chainlit/chainlit"],
+/* 2. Classe .watermark utilisée dans certaines vues */
+.watermark {
+  display: none !important;
+}

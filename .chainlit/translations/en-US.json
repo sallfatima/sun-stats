@@ -1,214 +1,214 @@
 {
     "common": {
         "actions": {
-            "cancel": "Cancel",
-            "confirm": "Confirm",
-            "continue": "Continue",
-            "goBack": "Go Back",
-            "reset": "Reset",
-            "submit": "Submit"
+            "cancel": "Annuler",
+            "confirm": "Confirmer",
+            "continue": "Continuer",
+            "goBack": "Retour",
+            "reset": "Réinitialiser",
+            "submit": "Valider"
         },
         "status": {
-            "loading": "Loading...",
+            "loading": "Chargement...",
             "error": {
-                "default": "An error occurred",
-                "serverConnection": "Could not reach the server"
+                "default": "Une erreur s'est produite",
+                "serverConnection": "Impossible de joindre le serveur"
             }
         }
     },
     "auth": {
         "login": {
-            "title": "Login to access the app",
+            "title": "Connexion pour accéder à l'application",
             "form": {
                 "email": {
-                    "label": "Email address",
-                    "required": "email is a required field"
+                    "label": "Adresse e-mail",
+                    "required": "l'e-mail est un champ obligatoire"
                 },
                 "password": {
-                    "label": "Password",
-                    "required": "password is a required field"
+                    "label": "Mot de passe",
+                    "required": "le mot de passe est un champ obligatoire"
                 },
                 "actions": {
-                    "signin": "Sign In"
+                    "signin": "Se connecter"
                 },
                 "alternativeText": {
-                    "or": "OR"
+                    "or": "OU"
                 }
             },
             "errors": {
-                "default": "Unable to sign in",
-                "signin": "Try signing in with a different account",
-                "oauthSignin": "Try signing in with a different account",
-                "redirectUriMismatch": "The redirect URI is not matching the oauth app configuration",
-                "oauthCallback": "Try signing in with a different account",
-                "oauthCreateAccount": "Try signing in with a different account",
-                "emailCreateAccount": "Try signing in with a different account",
-                "callback": "Try signing in with a different account",
-                "oauthAccountNotLinked": "To confirm your identity, sign in with the same account you used originally",
-                "emailSignin": "The e-mail could not be sent",
-                "emailVerify": "Please verify your email, a new email has been sent",
-                "credentialsSignin": "Sign in failed. Check the details you provided are correct",
-                "sessionRequired": "Please sign in to access this page"
+                "default": "Impossible de se connecter",
+                "signin": "Essayez de vous connecter avec un compte différent",
+                "oauthSignin": "Essayez de vous connecter avec un compte différent",
+                "redirectUriMismatch": "L'URI de redirection ne correspond pas à la configuration de l'application OAuth",
+                "oauthCallback": "Essayez de vous connecter avec un compte différent",
+                "oauthCreateAccount": "Essayez de vous connecter avec un compte différent",
+                "emailCreateAccount": "Essayez de vous connecter avec un compte différent",
+                "callback": "Essayez de vous connecter avec un compte différent",
+                "oauthAccountNotLinked": "Pour confirmer votre identité, connectez-vous avec le même compte que vous avez utilisé initialement",
+                "emailSignin": "L'e-mail n'a pas pu être envoyé",
+                "emailVerify": "Veuillez vérifier votre e-mail, un nouvel e-mail a été envoyé",
+                "credentialsSignin": "Échec de la connexion. Vérifiez que les détails fournis sont corrects",
+                "sessionRequired": "Veuillez vous connecter pour accéder à cette page"
             }
         },
         "provider": {
-            "continue": "Continue with {{provider}}"
+            "continue": "Continuer avec {{provider}}"
         }
     },
     "chat": {
         "input": {
-            "placeholder": "Type your message here...",
+            "placeholder": "Posez votre question sur les statistiques du Sénégal...",
             "actions": {
-                "send": "Send message",
-                "stop": "Stop Task",
-                "attachFiles": "Attach files"
+                "send": "Envoyer le message",
+                "stop": "Arrêter la tâche",
+                "attachFiles": "Joindre des fichiers"
             }
         },
         "speech": {
-            "start": "Start recording",
-            "stop": "Stop recording",
-            "connecting": "Connecting"
+            "start": "Commencer l'enregistrement",
+            "stop": "Arrêter l'enregistrement",
+            "connecting": "Connexion en cours"
         },
         "fileUpload": {
-            "dragDrop": "Drag and drop files here",
-            "browse": "Browse Files",
-            "sizeLimit": "Limit:",
+            "dragDrop": "Glissez et déposez vos fichiers ici",
+            "browse": "Parcourir les fichiers",
+            "sizeLimit": "Limite :",
             "errors": {
-                "failed": "Failed to upload",
-                "cancelled": "Cancelled upload of"
+                "failed": "Échec du téléchargement",
+                "cancelled": "Téléchargement annulé de"
             }
         },
         "messages": {
             "status": {
-                "using": "Using",
-                "used": "Used"
+                "using": "Utilisation de",
+                "used": "Utilisé"
             },
             "actions": {
                 "copy": {
-                    "button": "Copy to clipboard",
-                    "success": "Copied!"
+                    "button": "Copier dans le presse-papiers",
+                    "success": "Copié !"
                 }
             },
             "feedback": {
-                "positive": "Helpful",
-                "negative": "Not helpful",
-                "edit": "Edit feedback",
+                "positive": "Utile",
+                "negative": "Pas utile",
+                "edit": "Modifier le commentaire",
                 "dialog": {
-                    "title": "Add a comment",
-                    "submit": "Submit feedback"
+                    "title": "Ajouter un commentaire",
+                    "submit": "Envoyer le commentaire"
                 },
                 "status": {
-                    "updating": "Updating",
-                    "updated": "Feedback updated"
+                    "updating": "Mise à jour en cours",
+                    "updated": "Commentaire mis à jour"
                 }
             }
         },
         "history": {
-            "title": "Last Inputs",
-            "empty": "Such empty...",
-            "show": "Show history"
+            "title": "Dernières saisies",
+            "empty": "Aucun historique pour le moment...",
+            "show": "Afficher l'historique"
         },
         "settings": {
-            "title": "Settings panel"
-        },
-        "watermark": "Built with"
+            "title": "Panneau des paramètres"
+        }
+       
     },
     "threadHistory": {
         "sidebar": {
-            "title": "Past Chats",
+            "title": "Conversations précédentes",
             "filters": {
-                "search": "Search",
-                "placeholder": "Search conversations..."
+                "search": "Rechercher",
+                "placeholder": "Rechercher dans les conversations..."
             },
             "timeframes": {
-                "today": "Today",
-                "yesterday": "Yesterday",
-                "previous7days": "Previous 7 days",
-                "previous30days": "Previous 30 days"
+                "today": "Aujourd'hui",
+                "yesterday": "Hier",
+                "previous7days": "7 derniers jours",
+                "previous30days": "30 derniers jours"
             },
-            "empty": "No threads found",
+            "empty": "Aucune conversation trouvée",
             "actions": {
-                "close": "Close sidebar",
-                "open": "Open sidebar"
+                "close": "Fermer la barre latérale",
+                "open": "Ouvrir la barre latérale"
             }
         },
         "thread": {
-            "untitled": "Untitled Conversation",
+            "untitled": "Conversation sans titre",
             "menu": {
-                "rename": "Rename",
-                "delete": "Delete"
+                "rename": "Renommer",
+                "delete": "Supprimer"
             },
             "actions": {
                 "delete": {
-                    "title": "Confirm deletion",
-                    "description": "This will delete the thread as well as its messages and elements. This action cannot be undone",
-                    "success": "Chat deleted",
-                    "inProgress": "Deleting chat"
+                    "title": "Confirmer la suppression",
+                    "description": "Cela supprimera la conversation ainsi que ses messages et éléments. Cette action ne peut pas être annulée",
+                    "success": "Conversation supprimée",
+                    "inProgress": "Suppression de la conversation"
                 },
                 "rename": {
-                    "title": "Rename Thread",
-                    "description": "Enter a new name for this thread",
+                    "title": "Renommer la conversation",
+                    "description": "Entrez un nouveau nom pour cette conversation",
                     "form": {
                         "name": {
-                            "label": "Name",
-                            "placeholder": "Enter new name"
+                            "label": "Nom",
+                            "placeholder": "Entrez le nouveau nom"
                         }
                     },
-                    "success": "Thread renamed!",
-                    "inProgress": "Renaming thread"
+                    "success": "Conversation renommée !",
+                    "inProgress": "Renommage de la conversation"
                 }
             }
         }
     },
     "navigation": {
         "header": {
-            "chat": "Chat",
-            "readme": "Readme",
+            "chat": "Assistant ANSD",
+            "readme": "À propos",
             "theme": {
-                "light": "Light Theme",
-                "dark": "Dark Theme",
-                "system": "Follow System"
+                "light": "Thème clair",
+                "dark": "Thème sombre",
+                "system": "Suivre le système"
             }
         },
         "newChat": {
-            "button": "New Chat",
+            "button": "Nouvelle conversation",
             "dialog": {
-                "title": "Create New Chat",
-                "description": "This will clear your current chat history. Are you sure you want to continue?",
-                "tooltip": "New Chat"
+                "title": "Créer une nouvelle conversation",
+                "description": "Cela effacera votre historique de conversation actuel. Êtes-vous sûr de vouloir continuer ?",
+                "tooltip": "Nouvelle conversation"
             }
         },
         "user": {
             "menu": {
-                "settings": "Settings",
+                "settings": "Paramètres",
                 "settingsKey": "S",
-                "apiKeys": "API Keys",
-                "logout": "Logout"
+                "apiKeys": "Clés API",
+                "logout": "Se déconnecter"
             }
         }
     },
     "apiKeys": {
-        "title": "Required API Keys",
-        "description": "To use this app, the following API keys are required. The keys are stored on your device's local storage.",
+        "title": "Clés API requises",
+        "description": "Pour utiliser cette application, les clés API suivantes sont requises. Les clés sont stockées dans le stockage local de votre appareil.",
         "success": {
-            "saved": "Saved successfully"
+            "saved": "Sauvegardé avec succès"
         }
     },
     "alerts": {
-        "info": "Info",
+        "info": "Information",
         "note": "Note",
-        "tip": "Tip",
+        "tip": "Conseil",
         "important": "Important",
-        "warning": "Warning",
-        "caution": "Caution",
-        "debug": "Debug",
-        "example": "Example",
-        "success": "Success",
-        "help": "Help",
-        "idea": "Idea",
-        "pending": "Pending",
-        "security": "Security",
-        "beta": "Beta",
-        "best-practice": "Best Practice"
+        "warning": "Attention",
+        "caution": "Prudence",
+        "debug": "Débogage",
+        "example": "Exemple",
+        "success": "Succès",
+        "help": "Aide",
+        "idea": "Idée",
+        "pending": "En attente",
+        "security": "Sécurité",
+        "beta": "Bêta",
+        "best-practice": "Bonne pratique"
     }
 }

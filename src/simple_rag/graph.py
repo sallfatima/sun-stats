@@ -1,5 +1,5 @@
 # =============================================================================
-# FICHIER CORRIGÉ: src/simple_rag/graph.py
+# FICHIER INTÉGRÉ: src/simple_rag/graph.py AVEC SUGGESTIONS DE QUESTIONS
 # =============================================================================
 
 ### Nodes
@@ -126,7 +126,7 @@ def format_docs_with_metadata(docs) -> str:
     return "\n".join(formatted_parts)
 
 # =============================================================================
-# FONCTIONS PRINCIPALES CORRIGÉES
+# FONCTIONS PRINCIPALES AVEC SUGGESTIONS INTÉGRÉES
 # =============================================================================
 
 async def retrieve(state, *, config):
@@ -165,7 +165,6 @@ async def retrieve(state, *, config):
         # Paramètres Pinecone compatibles
         safe_search_kwargs = {
             "k": 10,
-           
             # Suppression de lambda_mult qui cause l'erreur
         }
         safe_config['configurable']['search_kwargs'] = safe_search_kwargs
@@ -191,9 +190,9 @@ async def retrieve(state, *, config):
 
 
 async def generate(state, *, config):
-    """Génération avec logique séquentielle CORRIGÉE."""
+    """Génération avec logique séquentielle ET suggestions de questions intégrées."""
     
-    print("🤖 ---GENERATE AVEC LOGIQUE SÉQUENTIELLE CORRIGÉE---")
+    print("🤖 ---GENERATE AVEC SUGGESTIONS DE QUESTIONS---")
     
     # CORRECTION 1: Gestion hybride dict/dataclass
     if isinstance(state, dict):
@@ -285,9 +284,16 @@ DOCUMENTS DISPONIBLES :
             if is_satisfactory:
                 print("\n✅ SUCCÈS ÉTAPE 1 : Réponse satisfaisante trouvée dans les documents indexés")
                 
+                # Générer des suggestions de questions
+                suggestions = await generate_question_suggestions(
+                    user_question, response_content, documents, model
+                )
+                
                 # Ajouter les sources des documents
                 sources_section = create_document_sources(documents, response_content)
-                final_response = response_content + sources_section
+                
+                # Construire la réponse finale avec suggestions
+                final_response = response_content + sources_section + suggestions
                 
                 enhanced_response = AIMessage(content=final_response)
                 return {"messages": [enhanced_response], "documents": documents}
@@ -348,9 +354,16 @@ IMPORTANT : Mentionnez que cette information provient des connaissances ANSD off
         
         print("✅ SUCCÈS ÉTAPE 2 : Réponse obtenue des connaissances ANSD")
         
+        # Générer des suggestions de questions pour les connaissances externes
+        suggestions = await generate_question_suggestions(
+            user_question, response_content, [], model
+        )
+        
         # Ajouter les sources externes
         sources_section = create_external_ansd_sources(response_content)
-        final_response = response_content + sources_section
+        
+        # Construire la réponse finale avec suggestions
+        final_response = response_content + sources_section + suggestions
         
         enhanced_response = AIMessage(content=final_response)
         return {"messages": [enhanced_response], "documents": documents}
@@ -368,7 +381,202 @@ IMPORTANT : Mentionnez que cette information provient des connaissances ANSD off
         return {"messages": [fallback_response], "documents": documents}
 
 # =============================================================================
-# FONCTIONS D'ÉVALUATION ET DE SOURCES
+# NOUVELLE FONCTION POUR GÉNÉRER DES SUGGESTIONS DE QUESTIONS
+# =============================================================================
+
+async def generate_question_suggestions(user_question, response_content, documents, model):
+    """Génère des suggestions de questions suivantes contextuelles."""
+    
+    print("\n🔮 GÉNÉRATION DES SUGGESTIONS DE QUESTIONS...")
+    
+    try:
+        # Analyser le contexte pour les suggestions
+        document_topics = extract_topics_from_documents(documents) if documents else []
+        response_topics = extract_topics_from_response(response_content)
+        
+        # Prompt pour générer des suggestions contextuelles
+        suggestions_prompt = ChatPromptTemplate.from_messages([
+            ("system", """Vous êtes un expert ANSD qui aide les utilisateurs à explorer les statistiques du Sénégal.
+
+Basé sur la question posée et la réponse fournie, générez 4 questions de suivi pertinentes et spécifiques au contexte ANSD.
+
+RÈGLES POUR LES SUGGESTIONS :
+✅ Questions COMPLÉMENTAIRES à la question originale
+✅ Utilisez la terminologie ANSD (RGPH, EDS, ESPS, EHCVM, ENES)
+✅ Questions spécifiques au Sénégal et aux données disponibles
+✅ Mélangez différents angles : temporel, géographique, thématique, méthodologique
+✅ Questions qui approfondissent ou élargissent le sujet
+✅ Évitez de répéter la question originale
+
+TYPES DE QUESTIONS À PRIVILÉGIER :
+🔍 Comparaisons temporelles (évolution, tendances)
+🗺️ Analyses géographiques (régions, départements)
+👥 Segmentations démographiques (âge, sexe, milieu)
+📊 Indicateurs connexes ou complémentaires
+🔬 Aspects méthodologiques des enquêtes
+💡 Implications politiques ou sociales
+
+FORMAT EXACT :
+**❓ QUESTIONS SUGGÉRÉES :**
+
+1. [Question sur l'évolution temporelle ou comparaison entre périodes]
+
+2. [Question sur la répartition géographique ou variations régionales]
+
+3. [Question sur un indicateur connexe ou complémentaire]
+
+4. [Question méthodologique ou d'approfondissement thématique]
+
+CONTEXTE QUESTION ORIGINALE :
+{original_question}
+
+THÈMES IDENTIFIÉS DANS LA RÉPONSE :
+{response_topics}
+
+THÈMES DISPONIBLES DANS LES DOCUMENTS :
+{document_topics}"""),
+            ("user", "Générez maintenant 4 suggestions de questions de suivi pertinentes.")
+        ])
+        
+        # Préparer le contexte pour les suggestions
+        context_data = {
+            "original_question": user_question,
+            "response_topics": ", ".join(response_topics) if response_topics else "Analyse générale",
+            "document_topics": ", ".join(document_topics) if document_topics else "Documents généraux ANSD"
+        }
+        
+        # Générer les suggestions
+        suggestions_chain = suggestions_prompt | model
+        suggestions_response = await suggestions_chain.ainvoke(context_data)
+        
+        suggestions_content = suggestions_response.content
+        
+        print(f"✅ Suggestions générées: {len(suggestions_content)} caractères")
+        
+        return f"\n\n{suggestions_content}"
+        
+    except Exception as e:
+        print(f"❌ Erreur génération suggestions: {e}")
+        
+        # Suggestions de fallback basiques
+        fallback_suggestions = generate_fallback_suggestions(user_question)
+        return f"\n\n{fallback_suggestions}"
+
+# =============================================================================
+# FONCTIONS UTILITAIRES POUR LES SUGGESTIONS
+# =============================================================================
+
+def extract_topics_from_documents(documents):
+    """Extrait les thèmes principaux des documents."""
+    
+    if not documents:
+        return []
+    
+    topics = set()
+    
+    # Mots-clés thématiques ANSD
+    ansd_keywords = {
+        'démographie': ['population', 'habitants', 'démographique', 'natalité', 'mortalité'],
+        'économie': ['économie', 'pib', 'revenus', 'emploi', 'secteur'],
+        'éducation': ['éducation', 'scolarisation', 'alphabétisation', 'école'],
+        'santé': ['santé', 'maternelle', 'vaccination', 'morbidité'],
+        'pauvreté': ['pauvreté', 'pauvre', 'indigence', 'vulnérabilité'],
+        'géographie': ['région', 'département', 'urbain', 'rural', 'dakar'],
+        'enquêtes': ['rgph', 'eds', 'esps', 'ehcvm', 'enes', 'recensement']
+    }
+    
+    # Analyser le contenu des documents
+    combined_content = " ".join([doc.page_content.lower() for doc in documents if hasattr(doc, 'page_content')])
+    
+    for theme, keywords in ansd_keywords.items():
+        if any(keyword in combined_content for keyword in keywords):
+            topics.add(theme)
+    
+    return list(topics)
+
+def extract_topics_from_response(response_content):
+    """Extrait les thèmes principaux de la réponse."""
+    
+    topics = []
+    response_lower = response_content.lower()
+    
+    # Détection de thèmes spécifiques
+    if any(term in response_lower for term in ['population', 'habitants', 'démographique']):
+        topics.append('démographie')
+    
+    if any(term in response_lower for term in ['économie', 'pib', 'croissance', 'secteur']):
+        topics.append('économie')
+    
+    if any(term in response_lower for term in ['pauvreté', 'pauvre', 'indigence']):
+        topics.append('pauvreté')
+    
+    if any(term in response_lower for term in ['emploi', 'travail', 'chômage']):
+        topics.append('emploi')
+    
+    if any(term in response_lower for term in ['éducation', 'école', 'scolarisation']):
+        topics.append('éducation')
+    
+    if any(term in response_lower for term in ['santé', 'mortalité', 'morbidité']):
+        topics.append('santé')
+    
+    if any(term in response_lower for term in ['région', 'département', 'géographique']):
+        topics.append('géographie')
+    
+    return topics
+
+def generate_fallback_suggestions(user_question):
+    """Génère des suggestions de base si l'IA échoue."""
+    
+    question_lower = user_question.lower()
+    
+    # Suggestions basées sur le contenu de la question
+    if any(term in question_lower for term in ['population', 'habitants']):
+        return """**❓ QUESTIONS SUGGÉRÉES :**
+
+1. Quelle est l'évolution de la population sénégalaise entre les différents recensements ?
+
+2. Comment la population se répartit-elle entre les régions du Sénégal ?
+
+3. Quels sont les indicateurs démographiques clés (taux de natalité, mortalité) ?
+
+4. Quelle est la répartition de la population par groupes d'âge et par sexe ?"""
+    
+    elif any(term in question_lower for term in ['pauvreté', 'pauvre']):
+        return """**❓ QUESTIONS SUGGÉRÉES :**
+
+1. Comment le taux de pauvreté a-t-il évolué au Sénégal ces dernières années ?
+
+2. Quelles sont les régions les plus touchées par la pauvreté ?
+
+3. Quels sont les profils des ménages pauvres selon l'ESPS ?
+
+4. Quelles sont les stratégies gouvernementales de lutte contre la pauvreté ?"""
+    
+    elif any(term in question_lower for term in ['emploi', 'travail']):
+        return """**❓ QUESTIONS SUGGÉRÉES :**
+
+1. Quelle est l'évolution du taux de chômage au Sénégal ?
+
+2. Comment l'emploi se répartit-il par secteur d'activité ?
+
+3. Quels sont les défis de l'emploi des jeunes selon l'ENES ?
+
+4. Quelle est la part de l'emploi informel dans l'économie sénégalaise ?"""
+    
+    else:
+        # Suggestions génériques
+        return """**❓ QUESTIONS SUGGÉRÉES :**
+
+1. Quels sont les derniers résultats du RGPH-5 sur la population sénégalaise ?
+
+2. Comment les indicateurs sociaux ont-ils évolué selon les enquêtes ANSD ?
+
+3. Quelles sont les principales disparités régionales observées ?
+
+4. Quels défis méthodologiques pose la collecte de données au Sénégal ?"""
+
+# =============================================================================
+# FONCTIONS D'ÉVALUATION ET DE SOURCES (CONSERVÉES ET AMÉLIORÉES)
 # =============================================================================
 
 def evaluate_response_quality(response_content, documents):
@@ -507,14 +715,21 @@ def create_external_ansd_sources(response_content):
     if 'enes' in response_lower or 'emploi' in response_lower:
         detected_sources.append("• ANSD - Enquête Nationale sur l'Emploi au Sénégal (ENES), 2021")
     
+    # Publications économiques
+    if 'pib' in response_lower or 'comptes nationaux' in response_lower:
+        detected_sources.append("• ANSD - Comptes Nationaux du Sénégal, 2023")
+    
+    if 'prix' in response_lower or 'inflation' in response_lower:
+        detected_sources.append("• ANSD - Indices des Prix à la Consommation, 2024")
+    
     # Toujours ajouter le site officiel
     detected_sources.append("• Site officiel ANSD (www.ansd.sn)")
     
     # Ajouter note explicative
     sources_section += "• **Note :** Informations issues des connaissances des publications ANSD officielles\n"
     
-    # Ajouter les sources détectées
-    for source in detected_sources:
+    # Ajouter les sources détectées (max 4 pour éviter la surcharge)
+    for source in detected_sources[:4]:
         sources_section += f"{source}\n"
     
     return sources_section

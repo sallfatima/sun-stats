@@ -1,11 +1,15 @@
 import chainlit as cl
 import sys
 import os
+from datetime import datetime
 
-# Ajouter le répertoire src au path Python
-sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+# ------------------------------------------------------------
+# Configuration des chemins et import du Simple RAG
+# ------------------------------------------------------------
+BASE_DIR = os.path.dirname(__file__)
+SRC_DIR = os.path.join(BASE_DIR, "src")
+sys.path.append(SRC_DIR)
 
-# Import direct du Simple RAG
 try:
     from simple_rag.graph import graph as simple_rag_graph
     RAG_AVAILABLE = True
@@ -14,63 +18,83 @@ except ImportError as e:
     print(f"❌ Erreur d'import Simple RAG: {e}")
     RAG_AVAILABLE = False
 
+# Fichier pour enregistrer les feedbacks locaux (👍 / 👎)
+FEEDBACK_LOG = os.path.join(BASE_DIR, "feedback.log")
+
+# ------------------------------------------------------------
+# Fonction d'appel au Simple RAG
+# ------------------------------------------------------------
 async def call_simple_rag(user_input: str, chat_history: list):
-    """Appelle le Simple RAG avec le message utilisateur"""
-    
+    """Appelle Simple RAG avec l'entrée utilisateur + historique."""
+
     if not RAG_AVAILABLE:
         return "❌ Simple RAG non disponible", []
-    
+
     try:
         from langchain_core.messages import HumanMessage, AIMessage
-        
-        # Convertir l'historique en messages LangChain
+
+        # Reconstruction de l'historique pour LangChain
         messages = []
         for user_msg, bot_msg in chat_history:
             messages.append(HumanMessage(content=user_msg))
             messages.append(AIMessage(content=bot_msg))
-        
-        # Ajouter le message actuel
         messages.append(HumanMessage(content=user_input))
-        
-        # Configuration par défaut
-        config = None
-        
-        print(f"🔍 Appel Simple RAG avec {len(messages)} messages")
-        
-        # Appeler le graphique Simple RAG sans configuration spécifique
-        result = await simple_rag_graph.ainvoke({"messages": messages}, config=config)
-        
-        # Extraire la réponse
-        if "messages" in result and result["messages"]:
+
+        result = await simple_rag_graph.ainvoke({"messages": messages}, config=None)
+
+        # Réponse générée
+        answer = "❌ Aucune réponse générée par Simple RAG"
+        if result.get("messages"):
             answer = result["messages"][-1].content
-            print(f"✅ Réponse générée: {len(answer)} caractères")
-        else:
-            answer = "❌ Aucune réponse générée par Simple RAG"
-        
-        # Extraire les documents sources
+
+        # Documents sources (liste de Document)
         sources = result.get("documents", [])
-        print(f"📄 Documents récupérés: {len(sources)}")
-        
         return answer, sources
-        
+
     except Exception as e:
-        print(f"❌ Erreur Simple RAG: {e}")
         import traceback
         traceback.print_exc()
-        return f"❌ Erreur technique: {str(e)}", []
+        return f"❌ Erreur technique: {e}", []
+
+# ------------------------------------------------------------
+# Utilitaires feedback 👍 / 👎
+# ------------------------------------------------------------
+
+def _log_feedback(mid: str, value: str):
+    """Enregistre le feedback dans un fichier CSV minimal."""
+    try:
+        with open(FEEDBACK_LOG, "a", encoding="utf-8") as f:
+            f.write(f"{datetime.utcnow().isoformat()},{mid},{value}\n")
+    except Exception as log_err:
+        print("Erreur log feedback:", log_err)
+
+@cl.action_callback("like")
+async def on_like(action: cl.Action):
+    mid = action.payload.get("mid")
+    print(f"👍 Like reçu pour {mid}")
+    _log_feedback(mid, "like")
+    await action.remove()
+
+@cl.action_callback("dislike")
+async def on_dislike(action: cl.Action):
+    mid = action.payload.get("mid")
+    print(f"👎 Dislike reçu pour {mid}")
+    _log_feedback(mid, "dislike")
+    await action.remove()
+
+# ------------------------------------------------------------
+# Cycle de vie du chat
+# ------------------------------------------------------------
 
 @cl.on_chat_start
 async def on_chat_start():
-    """Initialisation du chat Simple RAG"""
-    
+    """Message de bienvenue + initialisation."""
     if not RAG_AVAILABLE:
         await cl.Message(
-            content="❌ **Simple RAG non disponible**\n\n"
-                   "Vérifiez que le module simple_rag est correctement installé."
+            content="❌ **Simple RAG non disponible**\n\nVérifiez l'installation du module `simple_rag`."
         ).send()
         return
-    
-    # Message de bienvenue
+
     welcome_message = """🇸🇳 **Bienvenue dans SunuStat - ANSD**
 
 **Assistant Intelligent pour les Statistiques du Sénégal**
@@ -90,28 +114,26 @@ Les réponses s'appuient exclusivement sur les publications officielles de l'Age
 • Comment évolue le taux d'alphabétisation ?
 • Quels sont les indicateurs de santé maternelle ?
 
-🆘 **Aide :** Tapez `/help` pour plus d'informations
+🆘 **Aide :** Tapez `/Aide` pour plus d'informations
 
 Posez vos questions sur les statistiques et enquêtes nationales !"""
 
     await cl.Message(content=welcome_message).send()
-    
-    # Initialiser l'historique du chat
     cl.user_session.set("chat_history", [])
 
 @cl.on_message
-async def main(message):
-    """Traitement principal des messages avec Simple RAG"""
-    
+async def main(message: cl.Message):
     content = message.content.strip()
-    
-    # Gestion des commandes spéciales
-    if content.lower() == "/help":
+
+    # --------------------------------------------------------
+    # Commandes spéciales
+    # --------------------------------------------------------
+    if content.lower() == "/Aide":
         help_text = """**🆘 Aide SunuStat - ANSD**
 
 **📋 Commandes disponibles :**
-• `/help` - Afficher cette aide
-• `/clear` - Effacer l'historique de conversation
+• `/Aide` - Afficher cette aide
+• `/Efface` - Effacer l'historique de conversation
 
 **📊 Types de données disponibles :**
 • **Démographiques** - Population, natalité, mortalité
@@ -133,96 +155,79 @@ async def main(message):
 • Demandez des sources précises
 
 **🔧 Système :** Simple RAG avec base documentaire ANSD"""
-
         await cl.Message(content=help_text).send()
         return
-    
-    if content.lower() == "/clear":
-        cl.user_session.set("chat_history", [])
-        await cl.Message(
-            content="🧹 **Historique effacé**\n\nVous pouvez recommencer une nouvelle conversation."
-        ).send()
-        return
-    
-    # Vérifier que Simple RAG est disponible
-    if not RAG_AVAILABLE:
-        await cl.Message(
-            content="❌ Simple RAG non disponible. Redémarrez l'application."
-        ).send()
-        return
-    
-    # Traitement du message principal
-    try:
-        # Récupérer l'historique
-        chat_history = cl.user_session.get("chat_history", [])
-        
-        # Limiter l'historique pour éviter de surcharger
-        short_history = chat_history[-5:]  # Garder les 5 derniers échanges
-        
-        # Afficher indicateur de traitement
-        processing_msg = await cl.Message(
-            content="🔍 **Recherche en cours...**\n\n"
-                   "• Récupération des documents ANSD\n"
-                   "• Analyse des données statistiques\n"
-                   "• Génération de la réponse..."
-        ).send()
-        
-        # Appeler Simple RAG
-        answer, sources = await call_simple_rag(content, short_history)
-        
-        # Supprimer le message de traitement
-        await processing_msg.remove()
-        
-        # Mettre à jour l'historique
-        chat_history.append((content, answer))
-        cl.user_session.set("chat_history", chat_history)
-        
-        # Préparer la réponse finale
-        response_content = f"**📊 SunuStat - ANSD répond :**\n\n{answer}"
-        
-        # Ajouter informations sur les sources si disponibles
-        if sources and len(sources) > 0:
-            response_content += f"\n\n📚 **Sources consultées :** {len(sources)} document(s) ANSD"
-        
-        # Envoyer la réponse
-        await cl.Message(content=response_content).send()
-        
-        # Optionnel: Afficher détails des sources pour debug
-        if sources and len(sources) > 0:
-            sources_text = f"📄 **Détails des sources :**\n\n"
-            for i, doc in enumerate(sources[:3], 1):  # Limiter à 3 sources
-                if hasattr(doc, 'metadata') and doc.metadata:
-                    pdf_name = doc.metadata.get('pdf_name', 'Document ANSD')
-                    page_num = doc.metadata.get('page_num', 'N/A')
-                    if '/' in pdf_name:
-                        pdf_name = pdf_name.split('/')[-1]
-                    sources_text += f"• **Source {i}:** {pdf_name}"
-                    if page_num != 'N/A':
-                        sources_text += f" (page {page_num})"
-                    sources_text += "\n"
-                else:
-                    sources_text += f"• **Source {i}:** Document ANSD\n"
-            
-            # Envoyer les détails des sources (optionnel, décommentez si souhaité)
-            # await cl.Message(content=sources_text).send()
-        
-    except Exception as e:
-        await cl.Message(
-            content=f"❌ **Erreur lors du traitement**\n\n"
-                   f"Une erreur technique s'est produite :\n"
-                   f"`{str(e)}`\n\n"
-                   f"Veuillez réessayer ou reformuler votre question."
-        ).send()
-        
-        print(f"❌ Erreur détaillée: {e}")
-        import traceback
-        traceback.print_exc()
 
-# Configuration optionnelle pour le débogage
+    if content.lower() == "/Effacer":
+        cl.user_session.set("chat_history", [])
+        await cl.Message(content="🧹 **Historique effacé**\n\nVous pouvez recommencer une nouvelle conversation.").send()
+        return
+
+    # --------------------------------------------------------
+    # Vérifications
+    # --------------------------------------------------------
+    if not RAG_AVAILABLE:
+        await cl.Message(content="❌ Simple RAG non disponible. Redémarrez l'application.").send()
+        return
+
+    # --------------------------------------------------------
+    # Traitement principal
+    # --------------------------------------------------------
+    chat_history = cl.user_session.get("chat_history", [])
+    short_history = chat_history[-5:]  # Limiter l'historique pour ne pas surcharger
+
+    processing = await cl.Message(content="🔍 **Recherche en cours...**\n\n• Récupération des documents ANSD\n• Analyse des données statistiques\n• Génération de la réponse...").send()
+
+    answer, sources = await call_simple_rag(content, short_history)
+    await processing.remove()
+
+    chat_history.append((content, answer))
+    cl.user_session.set("chat_history", chat_history)
+
+    response_content = f"**📊 SunuStat - ANSD répond :**\n\n{answer}"
+    if sources:
+        response_content += f"\n\n📚 **Sources consultées :** {len(sources)} document(s) ANSD"
+
+    # 1️⃣ Envoi de la réponse
+    assistant_msg = cl.Message(content=response_content)
+    await assistant_msg.send()
+
+    # 2️⃣ Boutons feedback Oui / Non
+    feedback_actions = [
+        cl.Action(
+            name="like",
+            label="Oui",
+            icon="thumbs-up",
+            tooltip="Réponse utile",
+            payload={"mid": assistant_msg.id},
+        ),
+        cl.Action(
+            name="dislike",
+            label="Non",
+            icon="thumbs-down",
+            tooltip="Réponse à améliorer",
+            payload={"mid": assistant_msg.id},
+        ),
+    ]
+
+    await cl.Message(content="Qualité de la réponse ?", actions=feedback_actions).send()
+
+    # --------------------------------------------------------
+    # (Optionnel) Affichage détaillé des sources
+    # --------------------------------------------------------
+    # if sources:
+    #     details = "📄 **Détails des sources :**\n\n" + "\n".join(
+    #         f"• {doc.metadata.get('pdf_name', 'Document ANSD')} (page {doc.metadata.get('page_num', 'N/A')})"
+    #         for doc in sources[:3]
+    #     )
+    #     await cl.Message(content=details).send()
+
+# ------------------------------------------------------------
+# Exécution directe (debug)
+# ------------------------------------------------------------
 if __name__ == "__main__":
     print("🚀 Démarrage SunuStat - ANSD (Simple RAG)")
-    print(f"📊 Simple RAG disponible: {RAG_AVAILABLE}")
-    
+    print("📊 Simple RAG disponible:", RAG_AVAILABLE)
     if RAG_AVAILABLE:
         print("✅ Prêt à répondre aux questions sur les statistiques du Sénégal")
     else:

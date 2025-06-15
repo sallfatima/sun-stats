@@ -39,11 +39,25 @@ multi_modal = true
 [features.speech_to_text]
     enabled = false
     # See all languages here https://github.com/JamesBrill/react-speech-kit#language-support
-    # language = "en-US"
+    # language = "fr-FR"
+[features.audio]
+    # Threshold for audio recording
+    min_decibels = -45
+    # Delay for the user to start speaking in MS
+    initial_silence_timeout = 3000
+    # Delay for the user to continue speaking in MS. If the user stops speaking for this duration, the recording will stop.
+    silence_timeout = 1500
+    # Above this duration (MS), the recording will forcefully stop.
+    max_duration = 15000
+    # Duration of the audio chunks in MS
+    chunk_duration = 1000
+    # Sample rate of the audio
+    sample_rate = 44100
+
 
 [UI]
 # Name of the app and chatbot.
-name = "TERANGA IA - ANSD"
+name = "Sunu Stat - ANSD"
 
 # Show the readme while the conversation is empty.
 show_readme_as_default = true
@@ -61,21 +75,30 @@ default_expand_messages = false
 hide_cot = false
 
 # Link to your github repo. This will add a github button in the UI's header.
-# github = "https://github.com/your-repo"
+# github = "https://github.com/sallfatima/sun-stats.git"
 
 # Specify a CSS file that can be used to customize the user interface.
 # The CSS file can be served from the public directory or via an external link.
-custom_css = "/public/style.css"
+#custom_css = "/public/style.css"
 
 # Specify a Javascript file that can be used to customize the user interface.
 # The Javascript file can be served from the public directory.
-# custom_js = "/public/script.js"
+custom_js = "/public/script.js"
 
 # Specify a custom font url.
 # custom_font = "https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap"
 
 # Specify a custom build directory for the UI. This is used to serve the UI from a different location.
 # custom_build = "./public/build"
+
+# Configuration pour la langue française
+default_locale = "fr-FR"
+
+# Masquer le watermark "Built with Chainlit"
+show_watermark = false
+
+
+custom_css = "/public/hide_watermark.css"
 
 # Override default MUI light theme. (Check theme.ts)
 [UI.theme]
