@@ -75,18 +75,17 @@ async def extract_visual_content(
     cfg = IndexConfiguration.from_runnable_config(config)
     pdf_root = Path(state.pdf_root).expanduser().resolve()
     
-    extraction_stats = {
-        "visual_extraction_completed": False,
-        "total_images_extracted": 0,
-        "total_tables_extracted": 0,
-        "extraction_errors": []
-    }
-    
     # Vérifier si l'extraction visuelle est activée
     if not cfg.enable_visual_indexing:
         print("⚠️ Extraction visuelle désactivée dans la configuration")
-        extraction_stats["visual_extraction_completed"] = True
-        return extraction_stats
+        # IMPORTANT: Retourner l'état avec visual_extraction_completed = True
+        # même si désactivé pour permettre l'indexation textuelle
+        return {
+            "visual_extraction_completed": True,
+            "total_images_extracted": 0,
+            "total_tables_extracted": 0,
+            "extraction_errors": ["Extraction visuelle désactivée dans la configuration"]
+        }
     
     try:
         # Créer l'extracteur visuel
@@ -105,32 +104,32 @@ async def extract_visual_content(
             pdf_root
         )
         
-        # Mettre à jour les statistiques
-        extraction_stats.update({
-            "visual_extraction_completed": True,
-            "total_images_extracted": extraction_result["total_images"],
-            "total_tables_extracted": extraction_result["total_tables"],
-            "pdfs_processed": extraction_result["processed_pdfs"],
-            "pdfs_failed": len(extraction_result["failed_pdfs"]),
-            "extraction_errors": extraction_result["processing_errors"]
-        })
-        
         print(f"✅ Extraction terminée:")
         print(f"   📊 {extraction_result['total_images']} images extraites")
         print(f"   📋 {extraction_result['total_tables']} tableaux extraits")
         print(f"   📄 {extraction_result['processed_pdfs']} PDFs traités")
         
-        # Marquer l'extraction comme terminée dans l'état
-        state.visual_extraction_completed = True
+        # IMPORTANT: Retourner les mises à jour de l'état au bon format pour LangGraph
+        # Ces clés seront fusionnées avec l'état existant
+        return {
+            "visual_extraction_completed": True,
+            "total_images_extracted": extraction_result["total_images"],
+            "total_tables_extracted": extraction_result["total_tables"],
+            "extraction_errors": extraction_result.get("processing_errors", [])
+        }
         
     except Exception as e:
         error_msg = f"Erreur lors de l'extraction visuelle: {e}"
-        extraction_stats["extraction_errors"].append(error_msg)
         logging.error(error_msg)
         print(f"❌ {error_msg}")
-    
-    return extraction_stats
-
+        
+        # En cas d'erreur, marquer comme non complété mais permettre le reste
+        return {
+            "visual_extraction_completed": False,
+            "total_images_extracted": 0,
+            "total_tables_extracted": 0,
+            "extraction_errors": [error_msg]
+        }
 
 async def extract_text_from_image_content(image_path: Path, api_key: str) -> str:
     """Extrait le texte d'une image via l'API Vision OpenAI."""
@@ -138,14 +137,18 @@ async def extract_text_from_image_content(image_path: Path, api_key: str) -> str
     import openai
     
     if not image_path.exists():
+        print(f"         ⚠️ Image non trouvée: {image_path}")
         return ""
     
     try:
         with open(image_path, "rb") as image_file:
             base64_image = base64.b64encode(image_file.read()).decode('utf-8')
         
+        # Configuration client OpenAI
+        client = openai.OpenAI(api_key=api_key)
+        
         response = await asyncio.to_thread(
-            openai.chat.completions.create,
+            client.chat.completions.create,
             model="gpt-4o-mini",
             messages=[{
                 "role": "user",
@@ -153,60 +156,80 @@ async def extract_text_from_image_content(image_path: Path, api_key: str) -> str
                     {
                         "type": "text",
                         "text": """Extrayez tout le texte visible dans cette image ANSD (graphique/tableau). 
-                        Incluez titres, légendes, valeurs numériques, labels.
-                        Organisez le texte de manière structurée et logique."""
+                        Incluez titres, légendes, valeurs numériques, labels d'axes, unités.
+                        Organisez le texte de manière structurée et logique.
+                        Si c'est un graphique, décrivez les données principales.
+                        Répondez en français."""
                     },
                     {
                         "type": "image_url",
-                        "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}
+                        "image_url": {
+                            "url": f"data:image/png;base64,{base64_image}",
+                            "detail": "high"
+                        }
                     }
                 ]
             }],
-            max_tokens=1000
+            max_tokens=1000,
+            temperature=0
         )
         
-        return response.choices[0].message.content
+        content = response.choices[0].message.content
+        return content if content else ""
         
     except Exception as e:
-        logging.error(f"Erreur extraction texte image {image_path}: {e}")
+        logging.error(f"Erreur extraction vision {image_path}: {e}")
+        print(f"         ❌ Erreur API Vision: {e}")
         return ""
 
 
+
 async def extract_text_from_table_content(table_path: Path) -> str:
-    """Extrait et formate le texte d'un tableau CSV."""
+    """Extrait le texte d'un fichier CSV de tableau."""
     import pandas as pd
     
     if not table_path.exists():
         return ""
     
     try:
+        # Lire le CSV du tableau
         df = pd.read_csv(table_path)
+        
+        # Convertir en format texte structuré
+        if df.empty:
+            return ""
+            
+        # Limiter le nombre de lignes pour éviter les contenus trop volumineux
+        max_rows = 20
+        if len(df) > max_rows:
+            df = df.head(max_rows)
+            truncated_note = f"\n[Tableau tronqué: affichage de {max_rows} lignes sur {len(pd.read_csv(table_path))}]"
+        else:
+            truncated_note = ""
+        
+        # Formatage du tableau en texte
         text_parts = []
         
         # En-têtes
-        if not df.columns.empty:
-            headers = " | ".join(str(col).strip() for col in df.columns if str(col).strip())
-            text_parts.append(f"Colonnes: {headers}")
+        headers = " | ".join(str(col) for col in df.columns)
+        text_parts.append(f"Colonnes: {headers}")
         
-        # Données (limiter pour éviter un texte trop long)
-        max_rows = 15
-        for idx, row in df.head(max_rows).iterrows():
-            row_text = " | ".join(str(val).strip() for val in row.values 
-                                if str(val).strip() and str(val) != 'nan')
-            if row_text:
-                text_parts.append(f"Ligne {idx + 1}: {row_text}")
+        # Données (lignes principales)
+        for idx, row in df.iterrows():
+            if idx >= 5:  # Limiter aux 5 premières lignes pour l'indexation
+                break
+            row_text = " | ".join(str(val) for val in row.values)
+            text_parts.append(f"Ligne {idx + 1}: {row_text}")
         
-        text_parts.append(f"Tableau: {len(df)} lignes × {len(df.columns)} colonnes")
+        # Statistiques du tableau
+        text_parts.append(f"Dimensions: {len(df)} lignes × {len(df.columns)} colonnes")
         
-        if len(df) > max_rows:
-            text_parts.append(f"(Aperçu des {max_rows} premières lignes)")
-        
-        return "\n".join(text_parts)
+        result = "\n".join(text_parts) + truncated_note
+        return result
         
     except Exception as e:
-        logging.error(f"Erreur extraction texte tableau {table_path}: {e}")
+        logging.error(f"Erreur lecture tableau {table_path}: {e}")
         return ""
-
 
 async def index_local_pdfs(
     state: IndexState,
@@ -300,8 +323,17 @@ async def index_local_pdfs(
         stats["total_text_chunks"] = total_text_chunks
         print(f"✅ Contenu textuel indexé: {total_text_chunks} chunks")
 
-        # 2. Indexer le contenu visuel si l'extraction a été effectuée
-        if cfg.enable_visual_indexing and getattr(state, 'visual_extraction_completed', False):
+        # 2. Indexer le contenu visuel SI activé ET extraction complétée
+        visual_extraction_completed = getattr(state, 'visual_extraction_completed', False)
+        
+        # DEBUG: Ajouter des logs pour diagnostiquer
+        print(f"🔍 DEBUG - Vérification de l'indexation visuelle:")
+        print(f"   cfg.enable_visual_indexing: {cfg.enable_visual_indexing}")
+        print(f"   visual_extraction_completed: {visual_extraction_completed}")
+        print(f"   state has visual_extraction_completed: {hasattr(state, 'visual_extraction_completed')}")
+        
+        
+        if cfg.enable_visual_indexing and (Path(cfg.chart_index_path).exists() or Path(cfg.table_index_path).exists()):
             print("🎨 Indexation du contenu visuel...")
             
             visual_stats = await index_visual_content(
@@ -323,8 +355,19 @@ async def index_local_pdfs(
             print(f"   📋 {visual_stats['tables_indexed']} tableaux")
         
         else:
-            print("⚠️ Indexation visuelle ignorée (extraction non effectuée ou désactivée)")
+            # Message plus détaillé selon la cause
+            if not cfg.enable_visual_indexing:
+                print("⚠️ Indexation visuelle désactivée dans la configuration")
+            elif not visual_extraction_completed:
+                print("⚠️ Indexation visuelle ignorée (extraction non complétée)")
+                print("   Vérifiez les logs d'extraction pour identifier les problèmes")
 
+        # 3. Rapport final
+        #total_content = stats["total_text_chunks"] + stats["total_visual_content"]
+        
+        # Dans la fonction index_local_pdfs, corriger le rapport final:
+        stats["processed_files"] = [str(path) for path in pdf_paths if str(path) not in stats["failed_files"]]
+        
         # 3. Rapport final
         total_content = stats["total_text_chunks"] + stats["total_visual_content"]
         
@@ -340,10 +383,17 @@ async def index_local_pdfs(
         if stats["failed_files"]:
             print(f"❌ PDFs échoués: {len(stats['failed_files'])}")
         
+        # Statistiques d'échecs visuels
+        visual_stats = stats["visual_indexing_stats"]
+        if visual_stats["charts_failed"] > 0 or visual_stats["tables_failed"] > 0:
+            print(f"⚠️ Échecs visuels: {visual_stats['charts_failed']} graphiques, {visual_stats['tables_failed']} tableaux")
+        
         print("="*60)
         
         stats["status"] = f"Indexation terminée - {total_content} éléments indexés"
         return stats
+
+
 
 
 async def index_visual_content(vectorstore, cfg: IndexConfiguration) -> Dict[str, int]:
@@ -375,21 +425,26 @@ async def index_visual_content(vectorstore, cfg: IndexConfiguration) -> Dict[str
             
             # Traiter par petits batches
             batch_size = getattr(cfg, 'visual_batch_size', 5)
+            total_processed = 0
             
             for i in range(0, len(charts_df), batch_size):
                 batch = charts_df.iloc[i:i+batch_size]
                 texts, metadatas, ids = [], [], []
                 
+                print(f"      🔄 Traitement batch {i//batch_size + 1}/{(len(charts_df)-1)//batch_size + 1}")
+                
                 for idx, row in batch.iterrows():
                     try:
                         image_path = Path(row['image_path'])
+                        
+                        print(f"         📸 Extraction texte: {image_path.name}")
                         
                         # Extraire le texte de l'image
                         extracted_text = await extract_text_from_image_content(
                             image_path, cfg.api_key
                         )
                         
-                        if extracted_text:
+                        if extracted_text and len(extracted_text.strip()) > 10:
                             # Créer le contenu du document
                             content_parts = [
                                 f"Type: Graphique ANSD",
@@ -422,28 +477,45 @@ async def index_visual_content(vectorstore, cfg: IndexConfiguration) -> Dict[str
                             texts.append(content)
                             metadatas.append(metadata)
                             ids.append(doc_id)
+                            print(f"         ✅ Texte extrait: {len(extracted_text)} caractères")
+                            
+                        else:
+                            print(f"         ⚠️ Texte vide ou trop court: {image_path.name}")
+                            stats["charts_failed"] += 1
                             
                     except Exception as e:
                         logging.error(f"Erreur traitement graphique {idx}: {e}")
+                        print(f"         ❌ Erreur: {e}")
                         stats["charts_failed"] += 1
                         continue
                 
                 # Indexer le batch
                 if texts:
-                    await asyncio.to_thread(
-                        vectorstore.add_texts,
-                        texts=texts,
-                        metadatas=metadatas,
-                        ids=ids
-                    )
-                    stats["charts_indexed"] += len(texts)
-                    print(f"      ✅ Batch graphiques indexé: {len(texts)} éléments")
+                    try:
+                        await asyncio.to_thread(
+                            vectorstore.add_texts,
+                            texts=texts,
+                            metadatas=metadatas,
+                            ids=ids
+                        )
+                        stats["charts_indexed"] += len(texts)
+                        total_processed += len(texts)
+                        print(f"      ✅ Batch graphiques indexé: {len(texts)} éléments")
+                    except Exception as e:
+                        logging.error(f"Erreur indexation batch graphiques: {e}")
+                        print(f"      ❌ Erreur indexation batch: {e}")
+                        stats["charts_failed"] += len(texts)
+                else:
+                    print(f"      ⚠️ Aucun texte valide dans ce batch")
                 
                 # Petite pause pour éviter les limites de taux API
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(1)
+            
+            print(f"   📊 Graphiques traités: {total_processed}/{len(charts_df)}")
                         
         except Exception as e:
             logging.error(f"Erreur indexation graphiques: {e}")
+            print(f"   ❌ Erreur générale graphiques: {e}")
     
     # 2. Indexer les tableaux
     tables_path = Path(cfg.table_index_path)
@@ -454,19 +526,24 @@ async def index_visual_content(vectorstore, cfg: IndexConfiguration) -> Dict[str
             
             # Traiter par petits batches
             batch_size = getattr(cfg, 'visual_batch_size', 10)  # Plus rapide pour les tableaux
+            total_processed = 0
             
             for i in range(0, len(tables_df), batch_size):
                 batch = tables_df.iloc[i:i+batch_size]
                 texts, metadatas, ids = [], [], []
                 
+                print(f"      🔄 Traitement batch tableaux {i//batch_size + 1}/{(len(tables_df)-1)//batch_size + 1}")
+                
                 for idx, row in batch.iterrows():
                     try:
                         table_path = Path(row['table_path'])
                         
+                        print(f"         📊 Extraction tableau: {table_path.name}")
+                        
                         # Extraire le texte du tableau
                         extracted_text = await extract_text_from_table_content(table_path)
                         
-                        if extracted_text:
+                        if extracted_text and len(extracted_text.strip()) > 20:
                             # Créer le contenu du document
                             content_parts = [
                                 f"Type: Tableau ANSD",
@@ -499,27 +576,46 @@ async def index_visual_content(vectorstore, cfg: IndexConfiguration) -> Dict[str
                             texts.append(content)
                             metadatas.append(metadata)
                             ids.append(doc_id)
+                            print(f"         ✅ Tableau traité: {len(extracted_text)} caractères")
+                            
+                        else:
+                            print(f"         ⚠️ Tableau vide ou trop petit: {table_path.name}")
+                            stats["tables_failed"] += 1
                             
                     except Exception as e:
                         logging.error(f"Erreur traitement tableau {idx}: {e}")
+                        print(f"         ❌ Erreur: {e}")
                         stats["tables_failed"] += 1
                         continue
                 
                 # Indexer le batch
                 if texts:
-                    await asyncio.to_thread(
-                        vectorstore.add_texts,
-                        texts=texts,
-                        metadatas=metadatas,
-                        ids=ids
-                    )
-                    stats["tables_indexed"] += len(texts)
-                    print(f"      ✅ Batch tableaux indexé: {len(texts)} éléments")
+                    try:
+                        await asyncio.to_thread(
+                            vectorstore.add_texts,
+                            texts=texts,
+                            metadatas=metadatas,
+                            ids=ids
+                        )
+                        stats["tables_indexed"] += len(texts)
+                        total_processed += len(texts)
+                        print(f"      ✅ Batch tableaux indexé: {len(texts)} éléments")
+                    except Exception as e:
+                        logging.error(f"Erreur indexation batch tableaux: {e}")
+                        print(f"      ❌ Erreur indexation batch: {e}")
+                        stats["tables_failed"] += len(texts)
+                else:
+                    print(f"      ⚠️ Aucun contenu valide dans ce batch")
+            
+            print(f"   📋 Tableaux traités: {total_processed}/{len(tables_df)}")
                         
         except Exception as e:
             logging.error(f"Erreur indexation tableaux: {e}")
+            print(f"   ❌ Erreur générale tableaux: {e}")
     
     return stats
+
+
 
 
 # Construction du graphe avec la nouvelle étape d'extraction
