@@ -1,8 +1,8 @@
-# 🇸🇳 Bienvenue sur TERANGA IA - ANSD
+# 🇸🇳 Bienvenue sur Sunu Stats - ANSD
 
-## Votre Assistant Intelligent pour les Statistiques du Sénégal
+## Votre Assistant IA pour les Statistiques du Sénégal.
 
-TERANGA IA est un assistant conversationnel spécialisé dans les données et enquêtes de l'**ANSD** (Agence Nationale de la Statistique et de la Démographie du Sénégal). Il utilise une architecture **RAG (Retrieval Augmented Generation)** pour vous fournir des réponses précises basées sur les publications officielles de l'ANSD.
+Sunu Stats est un assistant conversationnel spécialisé dans les données et enquêtes de l'**ANSD** (Agence Nationale de la Statistique et de la Démographie du Sénégal). Il utilise l'IA pour vous fournir des réponses précises basées sur les publications officielles de l'ANSD.
 
 ---
 
@@ -46,21 +46,10 @@ Voici des exemples de questions que vous pouvez poser :
 
 ---
 
-## 🔧 **Commandes Disponibles**
-
-- `/switch [graph_type]` - Changer de type de RAG
-- `/help` - Afficher l'aide complète
-
-**Types de RAG disponibles :**
-- `simple_rag` - RAG basique
-- `retrieval_graph` - RAG amélioré  
-- `self_rag` - RAG avec auto-vérification
-
----
 
 ## 📋 **Méthodologie**
 
-TERANGA IA analyse les documents officiels de l'ANSD pour vous fournir :
+Sunu Stats analyse les documents officiels de l'ANSD pour vous fournir :
 - ✅ **Données exactes** avec sources et années de référence
 - ✅ **Citations précises** des enquêtes et rapports
 - ✅ **Contexte méthodologique** quand disponible

@@ -71,12 +71,13 @@ async def on_chat_start():
         return
     
     # Message de bienvenue
-    welcome_message = """🇸🇳 **Bienvenue dans Sunu-Stats - ANSD**
+    welcome_message = """🇸🇳 **Bienvenue dans SunuStat - ANSD**
 
 **Assistant Intelligent pour les Statistiques du Sénégal**
 
+Les réponses s'appuient exclusivement sur les publications officielles de l'Agence Nationale de la Statistique et de la Démographie du Sénégal (ANSD).
 
-📊 **Données disponibles :**
+📊 **Données utilisées :**
 • **RGPH** - Recensement Général de la Population et de l'Habitat
 • **EDS** - Enquête Démographique et de Santé  
 • **ESPS/EHCVM** - Enquêtes sur la Pauvreté et Conditions de Vie
@@ -106,7 +107,7 @@ async def main(message):
     
     # Gestion des commandes spéciales
     if content.lower() == "/help":
-        help_text = """**🆘 Aide Sunu-Stats - ANSD**
+        help_text = """**🆘 Aide SunuStat - ANSD**
 
 **📋 Commandes disponibles :**
 • `/help` - Afficher cette aide
@@ -177,7 +178,7 @@ async def main(message):
         cl.user_session.set("chat_history", chat_history)
         
         # Préparer la réponse finale
-        response_content = f"**📊 Sunu-Stats - ANSD répond :**\n\n{answer}"
+        response_content = f"**📊 SunuStat - ANSD répond :**\n\n{answer}"
         
         # Ajouter informations sur les sources si disponibles
         if sources and len(sources) > 0:
@@ -219,7 +220,7 @@ async def main(message):
 
 # Configuration optionnelle pour le débogage
 if __name__ == "__main__":
-    print("🚀 Démarrage Sunu-Stats - ANSD (Simple RAG)")
+    print("🚀 Démarrage SunuStat - ANSD (Simple RAG)")
     print(f"📊 Simple RAG disponible: {RAG_AVAILABLE}")
     
     if RAG_AVAILABLE:

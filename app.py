@@ -20,7 +20,7 @@ except ImportError as e:
 
 # --- Configuration de la page Streamlit ---
 st.set_page_config(
-    page_title="Sunu-Stats - ANSD",
+    page_title="SunuStat - ANSD",
     page_icon="🇸🇳",
     layout="wide",
 )
@@ -87,7 +87,7 @@ def ask_simple_rag(user_input: str, chat_history: list):
         return f"❌ Erreur: {str(e)}", []
 
 # --- Interface principale ---
-st.title("🇸🇳 Sunu-Stats - ANSD")
+st.title("🇸🇳 SunuStat - ANSD")
 
 # Message de bienvenue
 st.markdown("""
@@ -179,7 +179,7 @@ if st.session_state.chat_history:
             st.markdown(f"**🧑‍💼 Question {conversation_number} :** {q}")
             
             # Réponse du bot
-            st.markdown(f"**🤖 Sunu-Stats répond :**")
+            st.markdown(f"**🤖 SunuStat répond :**")
             st.markdown(a)
             
             # Sources avec informations détaillées
@@ -226,7 +226,7 @@ if st.session_state.chat_history:
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center; color: #666; font-size: 0.8em;'>
-    <p>🇸🇳 <strong>Sunu-Stats - ANSD</strong> | Assistant Intelligent pour les Statistiques du Sénégal</p>
+    <p>🇸🇳 <strong>SunuStat - ANSD</strong> | Assistant Intelligent pour les Statistiques du Sénégal</p>
     <p>Propulsé par Simple RAG | Données officielles ANSD</p>
 </div>
 """, unsafe_allow_html=True)
